@@ -1,0 +1,20 @@
+{
+  "about": "Application images somebody recorded, by the SHA-256 of the image. tools/flash.py says which one a file is. An image that is not here is not wrong: it is one you built, or one nobody wrote down.",
+  "images": [
+    {
+      "sha256": "dcd90daed1bc2b22ec3116d7bdb28e5cada58393868c660b003e6f21b4a26704",
+      "firmware": "0.10.0",
+      "what": "firmware 0.10.0 as flashed on the reference card on 2026-11-18 (release v0.10.0, file clawhunt-agent-card-0.10.0-reference.bin); a build of the v0.10.0 source differs from it in the build stamp only"
+    },
+    {
+      "sha256": "6793e48791adec4302b417b649a977e878889c8e7bcfc37d7aece3a07b4847fe",
+      "firmware": "0.10.0",
+      "what": "firmware 0.10.0 built on 2026-11-24 with build.sh --docker from the v0.10.0 source (release v0.10.0, file clawhunt-agent-card-0.10.0-app.bin); it was not on a card; it differs from the reference image in the build stamp only (86 bytes)"
+    },
+    {
+      "sha256": "d911b86737818b624c5621d2bc7e344e3083cc01a06d6335b0153725349db555",
+      "firmware": "factory",
+      "what": "the factory application of the reference card (FoloToy's `trae_card` 1.2.2, built Sep 15 2026), as cut from its backup; not in this repository"
+    }
+  ]
+}

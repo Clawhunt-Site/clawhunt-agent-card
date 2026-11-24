@@ -1,0 +1,199 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light">
+<meta name="theme-color" content="#0E1C2C">
+<title>给卡连 Wi-Fi</title>
+<style>
+/* The card's own language (main/ui_card.c): the brand's blue, teal, mint and ink, and a colour field for every
+   state. The header is the card's sheet for the same moment: ink while the phone picks a network (setting up), blue
+   while the card tries, teal to mint when it is connected, slate when nothing happened. The row a finger presses
+   turns mint, as the card's selected menu row does. */
+:root{--paper:#F5FBFC;--white:#fff;--ink:#0E1C2C;--slate:#4F6477;--line:#CFE6E8;--blue:#3F7FF5;--deep:#2496DF;
+  --teal:#10B6A6;--mint:#C6FDF1;--sky:#E5F8FB;
+  --field:linear-gradient(#0E1C2C,#1D4F8C);--on:#fff;--sub:var(--sky)}
+body[data-view=trying]{--field:linear-gradient(var(--blue),var(--deep))}
+body[data-view=ok]{--field:linear-gradient(var(--teal),var(--mint));--on:var(--ink);--sub:var(--ink)}
+body[data-view=failed]{--field:linear-gradient(#4F6477,#3D5062);--sub:var(--line)}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%;background:var(--paper)}
+body{margin:0;background:var(--paper);color:var(--ink);font:16px/1.5 -apple-system,"PingFang SC","HarmonyOS Sans SC","MiSans","Noto Sans SC",sans-serif}
+header{background:var(--field);color:var(--on);padding:calc(14px + env(safe-area-inset-top)) 20px 24px}
+.row{display:flex;justify-content:space-between;gap:12px;margin:0;padding-bottom:6px;border-bottom:2px solid currentColor;font-size:13px;font-variant-numeric:tabular-nums}
+#card{overflow-wrap:anywhere}
+h1{margin:20px 0 8px;font-size:30px;line-height:1.2;font-weight:800;color:var(--on);overflow-wrap:anywhere}
+#sub{margin:0;font-size:15px;color:var(--sub);max-width:30em}
+main{padding:20px 20px calc(32px + env(safe-area-inset-bottom));max-width:560px;margin:0 auto}
+section,form{margin-bottom:28px}
+.head{display:flex;align-items:baseline;justify-content:space-between;border-bottom:1px solid var(--line)}
+h2{margin:0;font-size:13px;font-weight:600;color:var(--slate)}
+ul{list-style:none;margin:0;padding:0}
+li{border-bottom:1px solid var(--line)}
+button,input{font:inherit;color:inherit}
+.ap{display:flex;align-items:center;gap:12px;width:100%;min-height:56px;padding:10px 6px;border:0;background:none;text-align:left}
+.ap:active{background:var(--mint)}
+.name{flex:1;overflow-wrap:anywhere}
+.tag{font-size:13px;color:var(--slate)}
+.bars{display:flex;align-items:flex-end;gap:2px;height:16px}
+.bars i{width:4px;background:var(--line)}
+.bars i.on{background:var(--ink)}
+.ap:active .bars i{background:rgba(14,28,44,.25)}
+.ap:active .bars i.on{background:var(--ink)}
+.note{padding:16px 6px;color:var(--slate)}
+.text{border:0;background:none;padding:10px 0;color:var(--blue);font-size:15px;text-decoration:underline;text-underline-offset:3px}
+form h2{margin:0 0 16px;padding-bottom:8px;border-bottom:2px solid var(--ink);color:var(--ink);font-size:22px;font-weight:800;overflow-wrap:anywhere}
+label{display:block;font-size:13px;color:var(--slate);margin-bottom:14px}
+input[type=text],input[type=password]{display:block;width:100%;margin-top:6px;padding:12px 14px;border:2px solid var(--line);border-radius:0;background:var(--white);color:var(--ink);font-size:17px}
+input:focus-visible,button:focus-visible{outline:3px solid var(--blue);outline-offset:2px}
+.check{display:flex;align-items:center;gap:8px;color:var(--ink)}
+.check input{width:20px;height:20px;margin:0;accent-color:var(--blue)}
+#go{display:block;width:100%;min-height:54px;margin:8px 0 4px;border:0;border-radius:0;background:var(--blue);color:#fff;font-size:17px;font-weight:800}
+#go:disabled{background:var(--line);color:var(--slate)}
+#saved .ap{min-height:48px}
+#saved .text{color:var(--slate)}
+[hidden]{display:none!important}
+</style>
+</head>
+<body data-view="pick">
+<header>
+  <p class="row"><span id="card"></span><span id="step">2/3</span></p>
+  <h1 id="title">给这张卡选一个 Wi-Fi</h1>
+  <p id="sub">卡只认 2.4G 网络，手机热点也可以。</p>
+</header>
+<main>
+  <section id="pick">
+    <div class="head"><h2>附近的网络</h2><button class="text" id="rescan" type="button">重新搜索</button></div>
+    <ul id="aps"><li class="note">正在搜索…</li></ul>
+    <button class="text" id="manual" type="button">网络不在列表里</button>
+  </section>
+  <form id="join" hidden>
+    <h2 id="joinName"></h2>
+    <label id="ssidRow">网络名<input id="ssid" type="text" maxlength="32" autocapitalize="off" autocorrect="off"></label>
+    <label id="pskRow">密码<input id="psk" type="password" maxlength="63" autocomplete="off" autocapitalize="off" autocorrect="off"></label>
+    <label class="check" id="showRow"><input id="show" type="checkbox">显示密码</label>
+    <button id="go" type="submit">连接</button>
+    <button class="text" id="back" type="button">换一个网络</button>
+  </form>
+  <section id="saved" hidden>
+    <div class="head"><h2>卡记住的网络</h2></div>
+    <ul id="savedList"></ul>
+  </section>
+</main>
+<script>
+(function(){
+  function $(id){return document.getElementById(id)}
+  var view='pick', chosen=null, misses=0, online='';
+  var WHY={password:'密码不对，再输一次。',notfound:'卡找不到这个网络。它可能是 5G 网络，或者离得太远。',other:'网络没有回应，再试一次。'};
+  // The colour of each state's header, for the phone's own bar; and where the card's screen is in its three steps.
+  var FIELD={pick:'#0E1C2C',form:'#0E1C2C',trying:'#3F7FF5',ok:'#10B6A6',failed:'#4F6477'};
+
+  function api(path, body){
+    var opt = body ? {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)} : {cache:'no-store'};
+    return fetch(path, opt).then(function(r){return r.json().then(function(j){return {ok:r.ok,data:j}})});
+  }
+  function show(next, title, sub){
+    view = next;
+    document.body.setAttribute('data-view', next);
+    document.querySelector('meta[name=theme-color]').setAttribute('content', FIELD[next] || FIELD.pick);
+    $('step').textContent = next === 'pick' || next === 'form' ? '2/3' : '3/3';
+    $('title').textContent = title;
+    $('sub').textContent = sub;
+    $('pick').hidden = next !== 'pick';
+    $('join').hidden = !(next === 'form' || next === 'failed');
+    $('saved').hidden = (next === 'trying' || next === 'ok') || !$('savedList').children.length;
+  }
+  function showPick(){
+    show('pick', '给这张卡选一个 Wi-Fi', online ? '卡现在连着「' + online + '」。可以再加一个，比如手机热点。' : '卡只认 2.4G 网络，手机热点也可以。');
+  }
+  function showForm(ap){
+    chosen = ap;
+    $('joinName').textContent = ap ? ap.ssid : '手动输入';
+    $('ssidRow').hidden = !!ap;
+    $('ssid').value = ap ? ap.ssid : '';
+    $('pskRow').hidden = $('showRow').hidden = !!(ap && ap.open);
+    $('psk').value = '';
+    show('form', ap ? '连接「' + ap.ssid + '」' : '手动输入网络', ap && ap.open ? '这个网络不用密码。' : '输入这个网络的密码。密码只发给这张卡。');
+    (ap ? $('psk') : $('ssid')).focus();
+  }
+  function bars(rssi){
+    var level = rssi > -55 ? 4 : rssi > -67 ? 3 : rssi > -78 ? 2 : 1, el = document.createElement('span');
+    el.className = 'bars';
+    for (var i = 1; i <= 4; i++){ var b = document.createElement('i'); b.style.height = (i * 4) + 'px'; if (i <= level) b.className = 'on'; el.appendChild(b); }
+    return el;
+  }
+  function note(text){
+    var li = document.createElement('li'); li.className = 'note'; li.textContent = text;
+    $('aps').innerHTML = ''; $('aps').appendChild(li);
+  }
+  function scan(){
+    note('正在搜索…');
+    api('/api/scan').then(function(r){
+      if (!r.ok || !r.data.length){ note(r.ok ? '没搜到网络。靠近路由器，再搜一次。' : '卡正忙，稍后再搜。'); return; }
+      $('aps').innerHTML = '';
+      r.data.forEach(function(ap){
+        var li = document.createElement('li'), b = document.createElement('button'), n = document.createElement('span');
+        b.type = 'button'; b.className = 'ap'; n.className = 'name'; n.textContent = ap.ssid; b.appendChild(n);
+        if (ap.open){ var t = document.createElement('span'); t.className = 'tag'; t.textContent = '不用密码'; b.appendChild(t); }
+        b.appendChild(bars(ap.rssi));
+        b.onclick = function(){ showForm(ap); };
+        li.appendChild(b); $('aps').appendChild(li);
+      });
+    }).catch(function(){ note('没连上卡。确认手机还连着卡的热点。'); });
+  }
+  function drawSaved(list){
+    var ul = $('savedList'); ul.innerHTML = '';
+    list.forEach(function(item){
+      var li = document.createElement('li'), row = document.createElement('div'), n = document.createElement('span'), f = document.createElement('button');
+      row.className = 'ap'; n.className = 'name'; n.textContent = item.ssid;
+      f.type = 'button'; f.className = 'text'; f.textContent = '忘记';
+      f.onclick = function(){ f.disabled = true; api('/api/forget', {id:item.id}).then(poll, poll); };
+      row.appendChild(n); row.appendChild(f); li.appendChild(row); ul.appendChild(li);
+    });
+    $('saved').hidden = (view === 'trying' || view === 'ok') || !list.length;
+  }
+  function poll(){
+    return api('/api/state').then(function(r){
+      var s = r.data; misses = 0;
+      $('card').textContent = s.card;
+      online = s.online ? s.ssid : '';
+      drawSaved(s.saved || []);
+      if (s.phase === 'trying' && view !== 'trying'){
+        show('trying', '正在连接「' + s.ssid + '」', '大约 10 秒。期间手机可能会短暂断开卡的热点。');
+      } else if (s.phase === 'ok' && view !== 'ok'){
+        show('ok', '连上了', '卡已经连上「' + s.ssid + '」并记住了它。卡的热点马上关闭，手机会回到原来的网络。');
+      } else if (s.phase === 'failed' && view === 'trying'){
+        show('failed', '没连上', WHY[s.reason] || WHY.other);
+        $('psk').value = ''; if (!$('pskRow').hidden) $('psk').focus();
+      } else if (view === 'pick'){
+        showPick();
+      }
+    }).catch(function(){
+      if (view === 'trying' && ++misses > 6) $('sub').textContent = '手机和卡的热点断开了。看卡的屏幕：显示「连上了」就是成功。';
+    });
+  }
+
+  $('rescan').onclick = scan;
+  $('manual').onclick = function(){ showForm(null); };
+  $('back').onclick = function(){ showPick(); scan(); };
+  $('show').onchange = function(){ $('psk').type = this.checked ? 'text' : 'password'; };
+  $('join').onsubmit = function(e){
+    e.preventDefault();
+    var ssid = chosen ? chosen.ssid : $('ssid').value, psk = $('pskRow').hidden ? '' : $('psk').value;
+    if (!ssid){ $('ssid').focus(); return; }
+    if (psk && psk.length < 8){ show('failed', '密码太短', 'Wi-Fi 密码至少 8 位。'); $('psk').focus(); return; }
+    $('go').disabled = true;
+    // A listed network is named by its id (the exact bytes of its name), a typed one by its text.
+    api('/api/join', chosen ? {id:chosen.id, psk:psk} : {ssid:ssid, psk:psk}).then(function(r){
+      $('go').disabled = false;
+      if (r.ok){ misses = 0; show('trying', '正在连接「' + ssid + '」', '大约 10 秒。期间手机可能会短暂断开卡的热点。'); }
+      else show('failed', '没发出去', r.data.busy ? '卡正在连另一个网络，稍等再试。' : '网络名或密码的格式不对。');
+    }).catch(function(){ $('go').disabled = false; show('failed', '没发出去', '没连上卡。确认手机还连着卡的热点。'); });
+  };
+  poll().then(scan, scan);
+  setInterval(poll, 1500);
+})();
+</script>
+</body>
+</html>

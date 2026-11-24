@@ -1,0 +1,3 @@
+# What tools/flash.py needs besides Python 3.9+. esptool brings pyserial, which finds the card's port.
+# The command names and the lines the tool reads are esptool 5's (tried with 5.6.0).
+esptool>=5.0,<6

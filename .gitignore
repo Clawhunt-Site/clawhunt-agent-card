@@ -1,0 +1,11 @@
+# made from something else in the repository
+node_modules/
+__pycache__/
+*.pyc
+/dist/
+# never in the repository: device images, backups of a card, logs
+/backups/
+*.bin
+*.log
+.env
+.env.*

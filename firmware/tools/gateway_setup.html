@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<link rel="icon" href="/assets/clawhunt-mark.png">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>给卡连 Wi-Fi</title>
+<style>
+:root{--paper:#f5fbfc;--white:#fff;--ink:#0e1c2c;--slate:#4f6477;--muted:#7c8c9c;--blue:#3f7ff5;--teal:#10b6a6;--line:#cfe6e8;--danger:#c2413b;
+  --signal:linear-gradient(135deg,#3f7ff5 0%,#2496df 52%,#10b6a6 100%)}
+*{box-sizing:border-box;margin:0}
+body{min-height:100vh;background:var(--paper);color:var(--ink);font:16px/1.5 Inter,"Avenir Next","PingFang SC","Microsoft YaHei",Arial,sans-serif;display:grid;justify-items:center;padding:28px 16px}
+main{width:100%;max-width:420px;display:grid;gap:16px;align-content:start}
+h1{font-size:26px;line-height:1.2}
+p{color:var(--slate);font-size:14px}
+label{display:grid;gap:4px;font-size:13px;color:var(--slate)}
+select,input{font:inherit;width:100%;padding:11px 12px;border:1px solid var(--line);border-radius:12px;background:var(--white);color:var(--ink)}
+button{font:inherit;font-weight:700;height:54px;border:0;border-radius:18px;background:var(--signal);color:#fff;cursor:pointer}
+button.plain{background:var(--white);color:var(--ink);border:1px solid var(--line);height:44px;font-weight:600}
+:focus-visible{outline:3px solid var(--blue);outline-offset:2px}
+#state{font-weight:700}
+#state.online{color:var(--teal)}#state.failed{color:var(--danger)}
+</style>
+</head>
+<body>
+<main>
+  <h1>给卡连 Wi-Fi</h1>
+  <p>密码从这台电脑经 USB 直接交给卡，存在卡里。网关不记录它。卡只支持 2.4 GHz 网络。</p>
+  <p>现在：<span id="state">读取中</span></p>
+  <label>网络<select id="ssid"><option value="">正在让卡扫描…</option></select></label>
+  <label>密码<input id="psk" type="password" autocomplete="off" placeholder="开放网络留空"></label>
+  <button id="join">连接</button>
+  <button class="plain" id="rescan">重新扫描</button>
+  <button class="plain" id="forget">让卡忘掉已存的网络</button>
+  <p id="message" role="status"></p>
+</main>
+<script>
+const $ = id => document.getElementById(id);
+const WORDS = {off: '没有联网', connecting: '正在连接', online: '已联网', failed: '没连上，卡会每 30 秒重试'};
+let listed = false;
+
+async function poll(scan) {
+  const wifi = await (await fetch('/api/wifi' + (scan ? '?scan=1' : ''))).json();
+  $('state').textContent = (WORDS[wifi.state] || wifi.state) + (wifi.ip ? '，地址 ' + wifi.ip : '')
+    + (wifi.sync ? (wifi.sync.sync === 'ok' ? '，已从 ClawHunt 取到资料' : `，取资料失败（HTTP ${wifi.sync.http}）`) : '');
+  $('state').className = wifi.state;
+  if (wifi.scan && !listed) {
+    listed = true;
+    const names = [...new Set(wifi.scan.map(ap => ap[0]).filter(Boolean))];
+    $('ssid').replaceChildren(...names.map(name => {
+      const option = document.createElement('option');
+      option.value = option.textContent = name;
+      return option;
+    }));
+    if (!names.length) $('ssid').replaceChildren(new Option('没扫到网络', ''));
+  }
+}
+
+async function send(body, done) {
+  const response = await fetch('/api/wifi', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)});
+  const result = await response.json();
+  $('message').textContent = result.error || done;
+}
+
+$('join').addEventListener('click', () => {
+  if (!$('ssid').value) { $('message').textContent = '先选一个网络'; return; }
+  send({ssid: $('ssid').value, psk: $('psk').value}, '已交给卡，正在连接。');
+  $('psk').value = '';
+});
+$('forget').addEventListener('click', () => send({forget: true}, '卡已忘掉网络。'));
+$('rescan').addEventListener('click', () => { listed = false; $('ssid').replaceChildren(new Option('正在让卡扫描…', '')); poll(true); });
+poll(true);
+setInterval(() => poll(false), 1500);
+</script>
+</body>
+</html>
