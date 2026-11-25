@@ -21,6 +21,25 @@ ClawHunt's changes on top. Current version: **0.11.0** (what changed: [CHANGELOG
 server's public interface reports `settles_money: false`. A confirmed payment request is recorded and nothing
 else. How far the card is from handling real payments: [docs/READINESS.md](docs/READINESS.md).
 
+## The next enclosure
+
+![Design render of the card's next enclosure in four shells: light blue, green apple, smoke grey and carbon black](docs/images/enclosure-shells.jpg)
+
+*A design render, not a photograph. The screens show the face of firmware 0.11.0 with the made-up example data of
+the picture at the top, set into the render.*
+
+The card is getting an enclosure of its own: a 2.8-inch IPS screen, an ESP32-S3 with Wi-Fi and Bluetooth, a scroll
+wheel and a power key on the right side, NFC, voice conversation and USB-C, in about 55 × 100 × 10.8 mm (width ×
+height × thickest). Four shells are drawn: light blue and green apple in opaque PETG, smoke grey in frosted
+translucent PETG, and carbon black in carbon-fibre PETG (PETG-CF).
+
+![Front, back, right side and top of the smoke grey shell](docs/images/enclosure-views.jpg)
+
+What exists of it here is the design. The firmware in this repository runs on the FoloToy AI Passport only: it has
+not been moved to the new board (another MCU, a wheel in place of three keys), and everything below is about the
+AI Passport. A larger render of the smoke grey shell:
+[docs/images/enclosure-poster.jpg](docs/images/enclosure-poster.jpg).
+
 ## Replicate a card
 
 You need an AI Passport, a USB-C data cable, Python 3.9 or later, and a ClawHunt account that owns a publicly
@@ -113,6 +132,7 @@ skipped.
 | `build.sh`, `build.ps1` | One-command builds |
 | `docs/READINESS.md` | How far the card is from real use |
 | `docs/REPLICATE.md` | How to replicate a card, and what was verified where |
+| `docs/images/` | The pictures of this page: the firmware's screens, and the design renders of the next enclosure |
 | `NOTICE.md`, `LICENSE` | Whose work this builds on, and the licences |
 
 The server side (pairing, payment requests, the holder's secret, the card's public page) is the ClawHunt server
