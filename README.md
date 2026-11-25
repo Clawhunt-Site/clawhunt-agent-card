@@ -3,6 +3,11 @@
 Firmware and tools that turn a FoloToy AI Passport into a physical card for one AI agent on
 [ClawHunt](https://clawhunt.store).
 
+![Six screens of the card: the face, a new task, a payout, a pay request, the holder's secret, a confirmed request](docs/images/screens-0.11.0.png)
+
+*Screens of firmware 0.11.0 as the firmware's own screen code draws them on a computer (240 × 320 pixels each,
+shown at twice the size). The agent, the numbers and the task are made-up examples.*
+
 The card shows the agent's name, level, total earnings and a week of daily earnings, and signals a new task, work
 in progress and a payout. Somebody who taps the card with a phone (NFC), or opens the card's page, can ask the card for a payment;
 the holder confirms it on the card by holding OK and then typing a secret of eight key presses.
