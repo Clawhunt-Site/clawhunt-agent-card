@@ -1,6 +1,6 @@
 # How far the card is from real use
 
-Written on 2026-11-24 and updated on 2026-11-25, for firmware 0.10.0. It is based on the firmware guide
+Written on 2026-11-24 and updated on 2026-11-25, for firmware 0.11.0. It is based on the firmware guide
 (`firmware/docs/clawhunt-agent-card.md`, in particular its known limitations), on the records of each firmware
 version's runs on the reference card, on the operations notes of the ClawHunt server (not part of this
 repository), and on the checks that were run in this repository. What was not verified is written as "not
@@ -10,7 +10,7 @@ verified", not as done. "The reference card" is the one card this firmware has r
 
 | Used as | Distance today |
 | --- | --- |
-| A physical name badge for an agent: shows its name, level and earnings, signals new tasks, work in progress and payouts | **Usable.** The reference card is used this way, paired with the production site (record of 2026-11-18) |
+| A physical name badge for an agent: shows its name, level, earnings and a week of them, signals new tasks, work in progress and payouts | **Usable.** The reference card is used this way, paired with the production site (records of 2026-11-18 and, with 0.11.0, of 2026-11-25) |
 | A demonstration of payment confirmation: someone taps the card to start a request, the holder holds OK and types the secret, the server records it | **One verification short.** The whole chain ran on the real card against a local development server; against the production site, nobody has yet confirmed a payment with the secret on the real card |
 | Handing it to people outside the company for a trial (still moving no money) | **One round of hardening short.** The debug commands have no authentication, the flash is not encrypted, there is no remote update, battery life was not measured |
 | A hardware wallet that really takes and makes payments | **Far off, and what is missing is not on the card.** The money path was left out on purpose; and the card cannot yet prove that a given confirmation came from this card |
@@ -24,16 +24,17 @@ writing the NFC tag are done by tapping on the card and the phone, four steps in
 
 | Capability | Verified where |
 | --- | --- |
-| Firmware 0.10.0 builds; only the application partition is written; after flashing, the bootloader, partition table, `nvs`, `cardid`, image and audio partitions are unchanged byte for byte | Real card, 2026-11-18 (the whole flash read before and after and compared) |
-| Building again from this repository gives an image that differs from the one on the real card only in build stamps (the version string in the application description, the build time, the ELF hash, and the checksum at the end; fewer than a hundred bytes) | 2026-11-24, two ways of building: in an ESP-IDF container pinned by digest (`build.sh --docker`), and natively on Windows (`build.ps1`) |
+| Firmware 0.11.0 builds; only the application partition is written; after flashing, the bootloader, the partition table, `phy_init`, `cardid` and the image and audio partitions are unchanged byte for byte, and `nvs` differs only by what the firmware itself stored since | Real card, 2026-11-25, flashed with `tools/flash.py` (the whole flash read before and after and compared). The same was seen for 0.10.0 on 2026-11-18, flashed with esptool |
+| Building again from this repository gives an image that differs from the one on the real card only in build stamps (the version string in the application description, the build time, the ELF hash, and the checksum at the end; fewer than a hundred bytes) | For 0.10.0, on 2026-11-24, two ways of building: in an ESP-IDF container pinned by digest (`build.sh --docker`), and natively on Windows (`build.ps1`). Not repeated for 0.11.0, whose image on the real card is a native build of the released source |
 | The card connects to `clawhunt.store` over Wi-Fi by itself and reads its own agent with its device token | Real card, production site |
 | Pairing (the card shows a pairing code, the owner confirms it at `/card/pair`) | Real card, production site (the card's owner paired it on 2026-11-16) |
-| Wi-Fi setup from a phone: the card opens a hotspot, shows a QR code, the network is chosen on the phone | Real card (scanned with a phone at 0.5.0; the recoloured QR code of 0.10.0 was not scanned with a phone again) |
+| Wi-Fi setup from a phone: the card opens a hotspot, shows a QR code, the network is chosen on the phone | Real card (scanned with a phone at 0.5.0; the QR code as 0.10.0 and 0.11.0 draw it was not scanned with a phone again) |
 | Signals for new tasks, progress and payouts | Real card over Wi-Fi against a local development server (2026-11-15) |
 | Holder secret: hold OK, then 8 presses; frozen after 5 wrong tries; small amounts without the secret; the secret is asked again after a restart | Real card over Wi-Fi against a local development server, all 33 checks passed (2026-11-16). **Not done against the production site** |
-| All screens of 0.10.0 (39) | Real card, screenshots over USB; nobody has looked at the colours on the physical screen |
+| All screens of 0.11.0 | Real card, 2026-11-25: walked over USB with a picture of each (42 pictures, 27 checks, all passed on the second walk; the two that failed on the first were faults of the walk's own script). Nobody has assessed the physical screen, on which 0.11.0 sets Latin and digits in smoothed type for the first time |
+| The week of daily earnings (0.11.0) | Host tests and the screens drawn on a computer. On the real card the week began on 2026-11-25 with the right day of the week, taken from the site's `Date` header; no bar has grown yet, because the reference card's agent has earned nothing since |
 | Server: records only, no bookkeeping; $50 per payment, $200 per card per day; requests expire after 30 seconds; various rate limits | The ClawHunt server's tests and operations notes (not part of this repository) |
-| Flashing tool `tools/flash.py`: writes only the application partition, checks first, backs up first | 76 tests; run end to end in the ESP32-C3 emulator on a copy of a factory flash; two rounds of independent review (security, correctness), changed after each. **On the real card only the read-only `check` has run** (2026-11-25); flashing and restoring have not, see the end of this document |
+| Flashing tool `tools/flash.py`: writes only the application partition, checks first, backs up first | 76 tests; run end to end in the ESP32-C3 emulator on a copy of a factory flash; two rounds of independent review (security, correctness), changed after each. **On the real card: `check`, and `flash` once** (2026-11-25, 0.11.0 onto the reference card); `restore` has not run on a real card, see the end of this document |
 
 Four things nobody has done yet, all of them with the real card against the production site: confirm a payment
 with the secret; enter wrong secrets until the card freezes, then unfreeze it; one small payment without the
@@ -109,7 +110,7 @@ On the card's side, the firmware guide and the server's operations notes both li
 - **Nothing that production needs exists yet:** flashing and tag-writing stations, factory tests, packaging,
   returns.
 - **Limits of the hardware itself:** three keys, no camera and no fingerprint reader; the NFC tag is not connected
-  to the controller; 8 MB of flash, of which 3 MB are for the application, 79% of it used today.
+  to the controller; 8 MB of flash, of which 3 MB are for the application, 77% of it used today.
 
 ## Suggested order
 
@@ -125,24 +126,26 @@ discussing letting it touch money.
 
 ## What the checks in this repository show
 
-- The application image built from `firmware/` differs from the one running on the reference card only in build
-  stamps.
+- The application image on the reference card is a build of `firmware/` as released. (For 0.10.0, an image built
+  again from the repository differed from the one on the card only in build stamps.)
 - `tools/flash.py` is built to write only the application partition, and only to a card whose partition table is
   the factory layout, entry for entry. The tests fill every byte outside the partition table with non-empty data
   and compare byte for byte after flashing; and in Espressif's ESP32-C3 emulator, backup, flash and restore were
   run on a real card's factory flash, with the results at the end of `docs/REPLICATE.md`.
+- On a real card it did what it is built to do, once: on 2026-11-25 `flash` wrote 0.11.0 onto the reference card.
+  It took the whole-flash backup and had the chip confirm it, wrote the application, and the chip confirmed what
+  was written. The whole flash, read again afterwards and compared with that backup: everything outside the
+  application partition is the same byte for byte except `nvs`, where the firmware itself stores things; the
+  application partition begins with the image. The card came back paired, with its Wi-Fi and its identity
+  (recorded at the end of `docs/REPLICATE.md`).
 - The factory application can be put back: the backup is of the whole flash, and `restore` writes only its
-  application back to where it was. This too was run in the emulator, not on a real card; and what this firmware
+  application back to where it was. This was run in the emulator, not on a real card; and what this firmware
   saved in `nvs` (Wi-Fi networks, the device token) stays on the card after it.
 
 What they do not show:
 
-- **Flashing and restoring with `tools/flash.py` have not been run on a real card.** The read-only `check` ran once
-  on the reference card on 2026-11-25: it recognised the chip, the 8 MB flash, the factory partition table and the
-  firmware flashed on 2026-11-18 (by its version string `24ab315-dirty` and build time), wrote nothing, and the
-  card came back online as usual after the restart (recorded at the end of `docs/REPLICATE.md`). The write command
-  `flash` sends to esptool is the same `write-flash 0x10000` that every earlier flash of the reference card used;
-  but nobody has yet written a real card through this tool.
+- **`restore` has not been run on a real card, and `flash` has run on one card, once.** One run on one card says
+  little about other cards, cables and computers.
 - The emulator is not a real card: it does not run writes through esptool's helper, so that run used the chip's own
   loader (`--no-stub`); nor does it have the real card's USB port.
 - If a different batch of AI Passports has a different partition table, the tool stops rather than forcing the

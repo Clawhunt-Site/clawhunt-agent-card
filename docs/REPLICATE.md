@@ -23,16 +23,21 @@ can really take and make payments: [READINESS.md](READINESS.md).
 
 Two ways; pick one.
 
-**Download.** Release `v0.10.0` holds two images:
+**Download.** Release `v0.11.0` holds one image:
 
 | File | What it is |
 | --- | --- |
-| `clawhunt-agent-card-0.10.0-reference.bin` | The image flashed onto the reference card on 2026-11-18. SHA-256 `dcd90daed1bc2b22ec3116d7bdb28e5cada58393868c660b003e6f21b4a26704`. The version string inside it is `24ab315-dirty`, not `0.10.0`: it was built before the version number was passed to the build |
-| `clawhunt-agent-card-0.10.0-app.bin` | Built from the same source on 2026-11-24 with `build.sh --docker`. Never on a card; differs from the one above only in build stamps (86 bytes). Its version string is `0.10.0` |
+| `clawhunt-agent-card-0.11.0-reference.bin` | The image that runs on the reference card since 2026-11-25: built natively on Windows (`build.ps1`) from the released source, in an empty build folder. SHA-256 `665e8b2800bacf052e7d5bcd4de291dcf77265ac176fae90c82724cdfd2de95c`. Its version string is `0.11.0` |
 
 ```bash
-gh release download v0.10.0 -R Clawhunt-Site/clawhunt-agent-card -p "*-reference.bin"
+gh release download v0.11.0 -R Clawhunt-Site/clawhunt-agent-card -p "*-reference.bin"
 ```
+
+Release `v0.10.0` still holds the two images of 0.10.0 (the look before this one): the one that ran on the
+reference card from 2026-11-18 (`…-0.10.0-reference.bin`, SHA-256
+`dcd90daed1bc2b22ec3116d7bdb28e5cada58393868c660b003e6f21b4a26704`; the version string inside it is
+`24ab315-dirty`, because it was built before the version number was passed to the build) and one built from the
+same source with `build.sh --docker` that was never on a card.
 
 **Build it yourself.** With Docker (on Windows, run it in Git Bash):
 
@@ -52,7 +57,7 @@ On Windows without Docker, with a local ESP-IDF:
 powershell -NoProfile -ExecutionPolicy Bypass -File build.ps1 -IdfPath C:\esp\esp-idf-v5.5.3 -IdfToolsPath C:\esp\tools
 ```
 
-The image lands in `dist/clawhunt-agent-card-0.10.0-app.bin`. To install ESP-IDF, follow Espressif's ESP-IDF 5.5.3
+The image lands in `dist/clawhunt-agent-card-0.11.0-app.bin`. To install ESP-IDF, follow Espressif's ESP-IDF 5.5.3
 Get Started guide.
 
 The firmware has the id and name of one publicly listed ClawHunt agent built in (not the agent the reference card
@@ -70,7 +75,7 @@ You can also skip it: after pairing, the card shows the agent you paired it with
 ```bash
 pip install -r tools/requirements.txt
 python tools/flash.py check
-python tools/flash.py flash clawhunt-agent-card-0.10.0-reference.bin
+python tools/flash.py flash clawhunt-agent-card-0.11.0-reference.bin
 ```
 
 `check` only reads: whether the chip is an ESP32-C3, whether the partition table is the AI Passport's factory
@@ -185,9 +190,27 @@ card's Wi-Fi setup page.
 - Do not put backup files or Wi-Fi passwords into any repository or chat.
 - Example numbers are examples. Do not present demonstration data as real results.
 
-## How far this procedure was verified (2026-11-24; the real-card item on 11-25)
+## How far this procedure was verified (2026-11-24; the real-card items on 11-25)
 
-**On the real card: only `check` has run.** On 2026-11-25, `tools/flash.py check` ran once on the reference card
+**On the real card: `check`, and `flash` once.** `restore` has not run on a real card.
+
+**`flash`, 2026-11-25.** Firmware 0.11.0 was written onto the reference card with `tools/flash.py flash <image>
+--expect-version 0.11.0 --yes` (the tool as of tag `v0.10.0`, which has not changed since; esptool 5.6.0, with the
+helper; 63 seconds from start to end, exit code 0). A `check` just before it found the card and the firmware of
+2026-11-18 on it.
+
+| Step | Result |
+| --- | --- |
+| The card | ESP32-C3, 8 MB flash, the MAC of the reference card; the partition table is the factory layout, entry for entry |
+| Backup | The whole flash, 8,388,608 bytes, read in 37 seconds into the backup folder; the chip's own hash of its flash matched the file; the file holds the application that was on the card (the image of 2026-11-18) |
+| Write | After looking at the card again, 2,428,192 bytes (1,206,318 compressed) were written to `0x10000` in 8.5 seconds; esptool reported the hash of the written data verified; the card restarted |
+| The card afterwards | Over USB it says it runs 0.11.0, is online and is paired; it reads its agent from the site with its device token every minute (HTTP 200). Its pairing, its saved Wi-Fi and its identity were where they were |
+| Whole flash compared | The whole flash was read again after the screens had been walked through, and compared with the backup. The same byte for byte: everything before the partition table (the bootloader), the partition table, `phy_init`, `imgstore`, `imgframe`, `cardid`, `imguser`, `audio`, `imgava`, and everything after the last partition. `nvs`: 226 bytes differ, which is what the firmware itself stored there in the meantime (the week it keeps; the server address, which the walk changes and puts back). The application partition begins with the image (the same SHA-256 on the card as of the file); 731 bytes after the image differ, the tail of the previous application in the sector that was erased, all inside the application partition |
+
+The copy of the flash that was read for the comparison was deleted afterwards; the backup stays on the computer
+that flashed the card.
+
+**`check`, 2026-11-25, before any write.** `tools/flash.py check` ran once on the reference card
 (the tool as of tag `v0.10.0`, esptool 5.6.0, with the helper, 3 seconds, exit code 0):
 
 - It found the port by itself (the only Espressif USB port on that computer); chip ESP32-C3 (QFN32, rev v1.1),
@@ -202,10 +225,10 @@ card's Wi-Fi setup page.
   the card online, and three more looks within the following minute all showed it online and still able to take
   payment requests, meaning it came back with its Wi-Fi and device token.
 
-`flash` and `restore` have not yet run on any real card. Steps 3 to 6 (Wi-Fi, pairing, secret, NFC) are the steps
-the reference card actually went through; what the card does at each of them is described in the firmware guide
-(`firmware/docs/clawhunt-agent-card.md`). What follows is what can be shown without a real card; how to run the
-emulator and the "break the tool" checks again is in `tools/dev/flash_rig/README.md`.
+`restore` has not yet run on any real card, and `flash` on one card only. Steps 3 to 6 (Wi-Fi, pairing, secret,
+NFC) are the steps the reference card actually went through; what the card does at each of them is described in
+the firmware guide (`firmware/docs/clawhunt-agent-card.md`). What follows is what can be shown without a real
+card; how to run the emulator and the "break the tool" checks again is in `tools/dev/flash_rig/README.md`.
 
 **Tests** (`python -m unittest discover -s tools/tests -v`, 76 of them, no card needed; 2 of them need real card
 backup files and run only on a machine that holds those backups, 1 checks file permissions and runs only on Linux

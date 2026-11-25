@@ -8,6 +8,7 @@ This repository builds on the work listed below. Each part keeps its own licence
 | --- | --- | --- | --- |
 | The AI Passport firmware (the base before ClawHunt's changes, with its documentation, tests and skill notes) | `firmware/`, from upstream [FoloToy/ai-passport](https://github.com/FoloToy/ai-passport) at commit `1c9e8b1` (2026-11-12) | FoloToy | MIT, full text in `firmware/LICENSE` (Copyright (c) 2026 FoloToy) |
 | Fusion Pixel pixel font (12 px proportional, Simplified Chinese) | `firmware/assets/fonts/`, and the firmware font generated from it | TakWolf and contributors | SIL Open Font License 1.1, full text in `firmware/assets/fonts/OFL.txt` |
+| Cascadia Mono, three static weights (Regular, SemiBold, Bold): the unchanged files of release v2407.24 | `firmware/assets/fonts/CascadiaMono-*.ttf`, and the firmware fonts generated from them (`font_mono*.c`, `font_big*.c`) | Microsoft Corporation | SIL Open Font License 1.1, full text in `firmware/assets/fonts/OFL-CascadiaCode.txt`. Its Reserved Font Name is "Cascadia Code"; the generated fonts, which are subsets in another format, carry other names |
 | The DNS server of ESP-IDF's `captive_portal` example, changed so that stopping it closes its socket | `firmware/components/dns_server/` | Espressif Systems | Unlicense OR CC0-1.0 (stated at the top of its files) |
 
 The AI Passport hardware and the names and marks "FoloToy" and "AI Passport" belong to FoloToy. The MIT licence

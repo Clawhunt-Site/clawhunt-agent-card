@@ -214,8 +214,9 @@ class Gateway:
         return dict(
             t="stats", name=clip_utf8(profile["name"], PAYEE_MAX_BYTES), lvl=int(profile.get("level") or 1),
             xp=ladder_progress(tasks), deals=tasks, rating=0, streak=0, today=self.ledger.balance,
-            cells=[["成交", str(tasks)], ["成功率", f"{success}%"], ["已结算", str(self.settled_total)]],
-            money_label="演示余额",
+            # the face's number here is the sandbox wallet's balance, and its label says so
+            cells=[["deals", str(tasks)], ["settled", str(self.settled_total)], ["", f"{success}%"]],
+            money_label="DEMO · BALANCE",
         )
 
     # ---- card -------------------------------------------------------------

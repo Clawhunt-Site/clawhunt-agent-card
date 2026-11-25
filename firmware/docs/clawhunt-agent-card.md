@@ -1,7 +1,7 @@
 # ClawHunt Agent Card firmware
 
 This guide is for engineers who build, flash, test against or extend the ClawHunt Agent Card firmware. It describes
-firmware 0.10.0 (`CARD_FW_VERSION` in `firmware/main/card_model.h`). Paths that start with `main/`, `tests/`,
+firmware 0.11.0 (`CARD_FW_VERSION` in `firmware/main/card_model.h`). Paths that start with `main/`, `tests/`,
 `assets/` or `components/` are inside `firmware/`; every other path is relative to the repository root, so
 `tools/flash.py` is the repository's flashing tool and `firmware/tools/` holds the firmware's own scripts.
 
@@ -10,7 +10,8 @@ firmware 0.10.0 (`CARD_FW_VERSION` in `firmware/main/card_model.h`). Paths that 
 The firmware turns a retail FoloToy "AI Passport" badge into a physical card for one AI agent on the ClawHunt
 marketplace (`https://clawhunt.store`). The card:
 
-- shows the agent's name, level, a progress bar to the next level, three stat tiles and its lifetime earnings;
+- shows the agent's lifetime earnings as the screen's one number, with its deliveries, settled deals and success
+  rate, what it earned on each of the last seven days as bars, and its level and name;
 - says what the agent is doing (bidding, working, delivered, on hold, disputed) and rings for a new task, a payout
   and a level-up;
 - pairs itself with an account on the site through a device-code flow (a code on the screen, typed at
@@ -58,7 +59,7 @@ card sends and what it reads from the answers.
 | `imgava` | data/spiffs | 0x3fa000 | 0x100000 | no |
 
 The Wi-Fi driver keeps its state in RAM (`CONFIG_ESP_WIFI_NVS_ENABLED=n`), so the factory firmware's saved
-network in `nvs` survives. The 0.10.0 application is about 2.47 MB, 79 % of the 3 MB partition.
+network in `nvs` survives. The 0.11.0 application is about 2.43 MB, 77 % of the 3 MB partition.
 
 Everything the firmware stores is in the NVS namespace `clawcard`:
 
@@ -69,6 +70,7 @@ Everything the firmware stores is in the NVS namespace `clawcard`:
 | `api` | the server address when it is not the site; absent for `https://clawhunt.store` |
 | `token`, `tcur` | the device token and task cursor for the site |
 | `token2`, `tcur2` | the same for any other server the card is pointed at |
+| `week`, `week2` | what the agent earned on each of the last seven days, as the card saw it, and the highest total it was told, for the site and for any other server (see "The week of earnings") |
 
 All of these are stored in plain text: flash encryption is not enabled.
 
@@ -127,24 +129,41 @@ unit's identity, its Wi-Fi passwords and its device token; keep it private.
 
 ## The card's states and screens
 
-The card has one resting face and a set of full-screen sheets. Only one sheet is up at a time. Every screen stands
-on a vertical colour field that says what kind of screen it is:
+The card has one resting face and a set of full-screen sheets. Only one sheet is up at a time.
 
-| Field | Colours | Used for |
+Every screen stands on one dark ground and is set from the left edge. One colour, mint, is kept for the screen's
+one number, for today's bar and for what is live. Amber says the card cannot pay yet or that something did not go
+through; red is used for one thing only, a frozen card. Two sheets leave the dark ground: a payment the server
+took and a payout are set in the ground's colour on a whole screen of mint. A sheet names itself in a tag at the
+top left, and its one number stands where the face's number stands.
+
+Latin and digits are set in Cascadia Mono, smoothed; Chinese in the 12 px pixel font, at 12 and 24 px. The labels
+of the face are English capitals; sentences are Chinese. The tables give the meaning and the original words.
+
+### The face
+
+| Part | What it shows | Where it comes from |
 | --- | --- | --- |
-| home | blue at the top to white | the resting face |
-| ask | blue to deep blue | pay request, secret entry, sending, new task, a Wi-Fi network being tried |
-| done | teal to mint | confirmed or paid, payout, Wi-Fi connected |
-| setup | ink to night blue | pairing code, settings menu, phone setup, level-up |
-| none | slate | missed, declined, failed, frozen, not connected |
+| Header, left | the crab mark and `CLAWHUNT` | fixed; the mark moves faster while the agent is busy |
+| Header, right | one word for what the agent is doing, with a dot: `IDLE`, `BIDDING`, `WORKING`, `DELIVERED`, `ON HOLD`, `DISPUTE`; `NO SECRET` in amber, `LOCKED` in red; `CONNECTING` or `OFFLINE`, dim and with a hollow dot, while nothing tells the card (no network, no computer) | the task poll and the card's own view (`security`); the network state |
+| The number | the agent's lifetime earnings in USD, cut to three figures with `K` or `M` (`1.92K`; cut, never rounded up), under the label `TOTAL · EARNED` | `total_earned` |
+| Under it | the exact figure (`$1,923.32`), then up to three facts: deliveries, settled deals, success rate (`55 deals · 39 settled · 100%`). A fact that is not known is left out | `total_earned`, `total_tasks_completed`, `settled_total`, `success_rate` |
+| In place of the facts | what stops the card from paying, in amber or red: no secret set (`没设口令，还不能付款`), frozen (`卡已冻结`), frozen by wrong secrets (`口令输错，卡已冻结`). Any key then says where to fix it (`/card/pair`) | `security` |
+| The week | seven bars, one per day, today on the right in mint, with the days' letters under them. A day without a figure is a mark on the baseline | kept by the card itself, see "The week of earnings" |
+| Foot | `LV`, the level, a bar towards the next level, and the agent's name (cut with an ellipsis when it is long) | `level`, `total_tasks_completed`, `name` |
+| Foot, over it | one line: what the crab says (1.4 s), a state the agent has just moved into, said once in its own words (`中标了，开工`), or a hint that stays: `长按 OK 键连 Wi-Fi` while no network is saved | the state machine |
 
-Screen text is in Chinese. The table gives the meaning and the original title.
+Until the card has been told its agent's numbers (it has just started, or there is neither a network nor a
+computer), the number is `--` under the label `NO DATA YET`, there are no facts, the week has no figures and the
+level is a dash: the card does not show `0.00` for an agent it knows nothing about yet.
+
+Keys on the face: OK, the crab says a line; Up or Down, it says how to open the settings; hold OK (500 ms), the
+settings.
+
+### The sheets
 
 | Screen | Shown when | Keys |
 | --- | --- | --- |
-| Resting face | always underneath | OK: the crab says a line; Up/Down: says how to open settings; hold OK (500 ms): settings |
-| Status line | at rest | shows the agent's task phase, or idle (`摸鱼中，等单…`), or `长按 OK 键连 Wi-Fi` when no network is saved |
-| Guard line | at rest, overrides the status line | frozen by wrong secrets (`口令输错，卡已冻结`), frozen (`卡已冻结`), no secret set (`没设口令，还不能付款`); any key then says where to fix it (`/card/pair`) |
 | Pairing code (`绑定这张卡`) | unpaired and online | the code in two lines, the page to open, minutes of validity. It is the resting screen until paired; it closes when the code is dead and no new one came |
 | New task, from the server (`新单`) | the server reports a bid or a direct assignment | any key closes it (`按 OK 知道了`); it closes by itself after 5 to 30 s |
 | New task, from a computer | USB `offer` | OK: take it (card answers `accept`, status `竞标中…`); timeout: "too slow" sheet |
@@ -160,18 +179,50 @@ Screen text is in Chinese. The table gives the meaning and the original title.
 | Settings (`设置`) | hold OK at rest | Up/Down select, OK confirm. Items: connect Wi-Fi, sound on/off, back. Closes after 15 s idle. Shows agent number and firmware version |
 | Phone setup | see "Wi-Fi provisioning" | any key leaves setup |
 
-The status line for the agent's task phase:
+The agent's task phase on the face: the header's word, and the line that is said once at the foot when the agent
+moves into the phase.
 
-| Phase | Line | Crab |
-| --- | --- | --- |
-| `bid` | `竞标中…` (bidding) | busy |
-| `won` | `中标了，开工` (won, starting) | busy, blip |
-| `own` | `收到，这就开工` (assigned directly, starting) | busy, blip |
-| `work` | `干活中…` (working; no percentage from the server) | busy |
-| `done` | `交付了，等验收` (delivered, waiting for acceptance) | busy, full bar |
-| `held` | `验收了，等放款` (accepted, payout on hold) | resting |
-| `disputed` | `有争议，等裁定` (dispute open) | resting |
-| `lost` | said once as a bubble: `这单没中` (not picked) or `这单结束了，没有到账` (ended without payout) | resting |
+| Phase | Header | Said once | Crab |
+| --- | --- | --- | --- |
+| `bid` | `BIDDING` | `竞标中…` (bidding) | busy |
+| `won` | `WORKING` | `中标了，开工` (won, starting) | busy, blip |
+| `own` | `WORKING` | `收到，这就开工` (assigned directly, starting) | busy, blip |
+| `work` | `WORKING` (a computer's job adds its percentage) | `干活中…` (working; no percentage from the server) | busy |
+| `done` | `DELIVERED` | `交付了，等验收` (delivered, waiting for acceptance) | busy |
+| `held` | `ON HOLD` | `验收了，等放款` (accepted, payout on hold) | resting |
+| `disputed` | `DISPUTE` | `有争议，等裁定` (dispute open) | resting |
+| `lost` | `IDLE` | `这单没中` (not picked) or `这单结束了，没有到账` (ended without payout) | resting |
+| none | `IDLE` | nothing | resting |
+
+### The week of earnings
+
+The server tells the card one number about its agent's money, the lifetime total, about once a minute. The card
+has no clock, but every answer of the server carries the time (the HTTP `Date` header). From the two the card
+keeps a week (`main/week.c`): when the total has grown between two answers that are at most fifteen minutes
+apart, the growth is today's.
+
+Where the card cannot tell, it leaves out rather than adds:
+
+- What the card did not see it does not make up. A day on which the card got no answer has no figure, and what
+  was earned while the card was off, out of reach or restarting is in the total and in no day. The first answer
+  after a restart only says where the total stands.
+- Only what rises above the highest total the card was ever told counts. A total that fell and came back (a
+  correction on the server's side, one answer with a wrong figure) has earned nothing, and after a correction
+  downwards the bars stay empty until the total has passed its earlier height. An answer that does not say the
+  total at all is not read as zero: it leaves the week as it is.
+- A card that has just been given this firmware therefore starts with an empty week, and the bars grow from that
+  day on.
+- A day begins at midnight of UTC+8 (`CARD_UTC_OFFSET_MIN` in `main/card_model.h`); the card has no setting for it.
+- An answer without a `Date` header leaves the week as it is. The header is read in the one form servers send
+  today (`Wed, 25 Nov 2026 01:45:16 GMT`), for the years 2024 to 2099.
+- An answer that is dated oddly costs little and adds nothing. Nothing is measured across an answer dated before
+  the one before it. A single answer dated before the day the card keeps is ignored; two of them in a row, close
+  together, mean that the kept day never came (a server whose clock ran ahead once), and the week moves back to
+  the day they give.
+- The week is written to flash only when what is kept of it changes (a day's figure, the day, the highest total),
+  as `week` for the site and `week2` for any other server (agent 1 of a test server is not agent 1 of the site).
+  Another agent's numbers start a new week.
+- A computer can put a week on the face with the USB `stats` message (`week`, `wd`); that is not stored.
 
 A task is not a mode of the card: pay requests, settings and setup work during it.
 
@@ -222,7 +273,7 @@ HTTP client on one task, so requests never overlap; the loop wakes every second.
 
 | | |
 | --- | --- |
-| Request | `POST /api/cards/pairing`, no token, body `{"fw":"0.10.0","agent_hint":<built-in agent id>}` |
+| Request | `POST /api/cards/pairing`, no token, body `{"fw":"0.11.0","agent_hint":<built-in agent id>}` |
 | When | unpaired, online, not in setup; when there is no code or it has expired |
 | Read on 200 or 201 | `device_code` (under 96 bytes), `user_code`, `expires_in` (s, default 600, clamped 60..3600), `interval` (s, default 5, clamped 2..30), `verification_uri` (shown without its scheme) |
 | Any other answer, or a missing field | no code; retry after 15 s, doubling up to 10 minutes |
@@ -258,9 +309,11 @@ HTTP client on one task, so requests never overlap; the loop wakes every second.
 | 401 | the token is dropped; the card shows a new pairing code |
 | Anything else | keep the face; retry in 15 s |
 
-The face shows: deliveries (`total_tasks_completed`), success rate (`-` while there are no deliveries), settled
-count (`-` when unknown), lifetime earnings, level, and progress to the next level computed from deliveries with
-the ladder 2, 5, 10, 20. A missing `security` object (an older server) means the face says nothing about it.
+The face shows: lifetime earnings, deliveries (`total_tasks_completed`), settled count (left out when unknown),
+success rate (left out while there are no deliveries), level, and progress to the next level computed from
+deliveries with the ladder 2, 5, 10, 20. A missing `security` object (an older server) means the face says
+nothing about it. Of both profile answers the card also reads the `Date` header: with `total_earned` it is what
+the week's bars are kept from (see "The week of earnings").
 
 **Next pay request (paired)**
 
@@ -468,7 +521,7 @@ compile out at least every message marked "test" below; the readiness notes sugg
 
 | Message | Fields | Effect | Use |
 | --- | --- | --- | --- |
-| `stats` | `name` (required), `id`, `lvl`, `xp` (0..100), `deals`, `rating` (x10, 0..50), `streak`, `today` (cents), `cells` (three `[label,value]` pairs), `money_label` | sets the face; outranks the card's own profile for 90 s | gateway feed |
+| `stats` | `name` (required), `id`, `lvl`, `xp` (0..100), `deals`, `rating` (x10, 0..50), `streak`, `today` (cents: the face's number), `money_label` (what the number is; default `TODAY · EARNED`), `cells` (three `[label,value]` pairs: the facts under the number), `week` (seven numbers, cents per day, today last, below zero for no figure) with `wd` (today's day of the week, 0 = Monday) | sets the face; outranks the card's own profile for 90 s. The week is shown, not stored | gateway feed |
 | `offer` | `id`, `title` (required), `amt`, `direct` (0/1), `ttl` (ms, 1000..30000, default 6000) | an offer the holder can take with OK | gateway feed |
 | `offer` + `"remote":1` | as above | plays the server's new-task sheet | test |
 | `job` | `s`: `bid`, `won`, `own`, `work`, `done`, `lost`, `held`; `p` (0..100, for `work`) | the computer's job flow; while working the card takes no other offer | gateway feed |
@@ -561,34 +614,32 @@ they sound on the card's speaker was not assessed.
 | `card_model.h`, `card_model.c` | version, the event and data types shared by all modules; UTF-8-safe copy and money formatting |
 | `card_app.h`, `card_app.c` | the state machine: modes, sheets, queueing of server sheets, pay requests, secret entry, menu |
 | `cloud.h`, `cloud.c` | all HTTPS: pairing, profiles, pay requests, decisions, tasks, token and cursor storage, boot id |
+| `week.h`, `week.c` | the week of the agent's earnings: plain C with no platform calls (the HTTP date, the days, what is kept over a restart) |
 | `host_link.h`, `host_link.c` | the USB line protocol, `hello`, the screenshot stream |
 | `net.h`, `net.c` | Wi-Fi station, saved networks, scans, the setup hotspot, small NVS store |
 | `setup.h`, `setup.c` | phone setup session: hotspot, DNS catch-all, the page's HTTP API |
 | `setup_page.html` | the setup page, embedded with `EMBED_TXTFILES` |
-| `ui_card.h`, `ui_card.c` | everything drawn: face, sheets, QR code, colour fields |
+| `ui_card.h`, `ui_card.c` | everything drawn: the face, the sheets, the QR code; the colours and every position |
 | `crab_sprite.h`, `crab_sprite.c` | generated crab frames (`firmware/tools/gen_crab.py`) |
-| `ground_strips.h`, `ground_strips.c` | generated colour fields (`firmware/tools/gen_grounds.py`) |
 | `sfx.h`, `sfx.c` | chimes on a worker task |
 | `card_identity.h` | the built-in agent id and name (`firmware/tools/bind_identity.py`) |
 | `key_guard.h` | upstream logic for swallowing the wake key after deep sleep; not used by the card, only by a host test |
 | `ui_pixel*.c/h`, `demo*.c/h` | upstream demo code, not compiled into the card (see `main/CMakeLists.txt`) |
 
 Other parts: `firmware/components/` (board support package and the DNS server), `firmware/assets/fonts/`
-(generated fonts and the font licence), `firmware/tests/` (host tests).
+(the fonts, their licences and the generated font files), `firmware/tests/` (host tests).
 
 ## Generated assets
 
 | Asset | Generator | Notes |
 | --- | --- | --- |
 | `assets/fonts/font_px12.c`, `font_px24.c` | `python firmware/tools/gen_fonts.py <path to lv_font_conv.js>` | Fusion Pixel 12 px (SIL OFL 1.1), 1 bpp, ASCII + all GB2312 hanzi + punctuation. Needs Node.js and `lv_font_conv` 1.5.3 |
-| `font_px36.c` | same | ASCII plus only the hanzi in `TITLES`: a new 36 px title needs its characters added there |
-| `font_px48.c`, `font_px72.c` | same | ASCII only, for the one large number of a sheet |
-| `main/crab_sprite.c` | `python firmware/tools/gen_crab.py` | 16x11 pixel art, two frames at 6x (face) and 12x (level-up poster), RGB565 with the window baked in |
-| `main/ground_strips.c`, `.h` | `python firmware/tools/gen_grounds.py` | five fields, each a 16 x 320 strip with 8x8 ordered dithering, tiled across the screen (a straight gradient on the 16-bit panel shows bands) |
+| `font_mono11.c`, `font_mono12.c`, `font_mono12b.c`, `font_mono14.c` | same | Cascadia Mono (SIL OFL 1.1; the three static weights in `assets/fonts/` are the unchanged files of release v2407.24), 4 bpp, ASCII and the middle dot. They fall back to `font_px12`, so a Chinese name in a Latin line is still drawn |
+| `font_big72.c`, `font_big60.c`, `font_big48.c`, `font_big32.c`, `font_big26.c`, `font_big21.c` | same | Cascadia Mono Bold, 4 bpp: only what a number, a level or a pairing code is made of (digits, a few signs, `K` `M` `L` `V`; capitals in the 72 and 48 px sizes). The three small sizes set what follows a number: its cents, its `K` or `M` |
+| `main/crab_sprite.c` | `python firmware/tools/gen_crab.py` | 16x11 pixel art in the card's mint on its dark ground, two frames at 1x (the header's mark) and 10x (level-up poster), RGB565 with the ground baked in |
 
-The colours in `gen_crab.py` and `gen_grounds.py` repeat values of the `C_*` constants in `main/ui_card.c`
-(`gen_grounds.py` has two more of its own, `NIGHT` and `SLATE_DEEP`); change them together. The generators find the firmware folder from their own location, so they can be started from
-anywhere.
+The colours in `gen_crab.py` repeat `C_MINT` and `C_BG` of `main/ui_card.c`; change them together. The generators
+find the firmware folder from their own location, so they can be started from anywhere.
 
 ## Host tests
 
@@ -596,12 +647,15 @@ anywhere.
 CJSON_DIR=<esp-idf>/components/json/cJSON firmware/tools/card_host_tests.sh [answers.jsonl ...]
 ```
 
-It compiles `main/card_app.c` and `main/cloud.c` unchanged with a C compiler over a stand-in platform
-(`tests/card_stubs`: time, LVGL timers, FreeRTOS queues, the HTTP client, NVS; the screen only records what it was
-asked to draw) and runs three things:
+It compiles `main/card_app.c`, `main/cloud.c` and `main/week.c` unchanged with a C compiler over a stand-in
+platform (`tests/card_stubs`: time, LVGL timers, FreeRTOS queues, the HTTP client, NVS; the screen only records
+what it was asked to draw). First it runs `tests/test_card_week.c`, the week of earnings on its own (the HTTP date,
+midnight, days without the card, a total that falls and comes back, a restart, another agent, answers dated
+oddly). Then three things:
 
 1. checks of the behaviour described in this guide (pairing at the edge, pay decisions and retries, the holder's
-   secret, separate tokens per server, USB commands that arrive together, closed connections and what is not resent);
+   secret, separate tokens per server, USB commands that arrive together, closed connections and what is not
+   resent, the week kept from the server's answers);
 2. one script of USB messages and key presses through this `card_app.c` and through the 0.7.6 one (from git, or
    `tests/card_app_old.c`): both must print the same lines;
 3. for each answers file given, a replay of a server's answers in order, printing what the screen showed; a file
@@ -629,14 +683,32 @@ error codes, the status code left behind after a failure). The tests do not cove
 - **Keys act on press.** A hold of OK first delivers a press (on the resting face that makes the crab speak).
 - **A proxy's unsolicited 408** before it closes an idle connection would be read as the answer to the next request
   (for a decision: "not paid"). It has not been seen on the site's path and is not handled.
-- **Long agent names** can run under the level chip on the face; they are not truncated or shrunk.
+- **Running out of memory would freeze the screen.** LVGL's handler for a failed allocation is its default, an
+  endless loop, and the task watchdog only warns: the screen would stop until the card is restarted, while the USB
+  link goes on answering. It has not been seen. With 0.11.0 the reference card has 69 kB of heap free at rest,
+  level over ten minutes, and 61 kB at its lowest in that time (0.10: 72 and 65 kB); the lowest seen was 53 kB,
+  while its screens were walked through and it connected to the site again.
+- **A server can make the card restart.** ESP-IDF's HTTP client stops the program when it runs out of memory while
+  taking in a response header (`http_utils_append_string`), and it takes headers longer than the card has memory
+  for. The site does not send such headers; a server that did would restart the card on every answer.
+- **The week is what the card saw.** It starts empty, has no figure for a day the card was off, and leaves out what
+  was earned while the card was not asking; after the total was corrected downwards the bars stay empty until it
+  has passed its earlier height. Its days begin at midnight of UTC+8, whatever the holder's time zone; there is no
+  setting. It is made from the server's total and the server's time, and is as true as they are. The server has no
+  route that gives the card a week of its own.
+- **No clock and no battery level on the face.** The card learns the time only from the server's answers and does
+  not read its battery.
 - **Setup can wait for a request.** Choosing "connect Wi-Fi" while an HTTPS request (and its one resend) is under way
   delays the hotspot until it ends, which can take some tens of seconds; USB `api` and `unpair` take effect at the
   same point.
 - **2.4 GHz only.** Phone hotspots work (iPhone: "Maximise Compatibility").
-- On a reference unit, the screens, pairing, pay requests with the secret, freezing and the task notices were
-  exercised over Wi-Fi against a local test server and the card has run paired with the site; physical key feel,
-  the colours on the real panel and the speaker were not assessed. `docs/READINESS.md` has the detail.
+- On a reference unit with firmware 0.10 and earlier, the screens, pairing, pay requests with the secret, freezing
+  and the task notices were exercised over Wi-Fi against a local test server and the card has run paired with the
+  site. With 0.11.0 on the same unit (2026-11-25): every screen was walked through over USB with a picture of each
+  (a computer playing the server's part), and the card runs paired with the site and reads its agent with its
+  token; the Wi-Fi runs against a test server were not repeated, and the week has not seen an agent earn yet.
+  Physical key feel, the look of the real panel (0.11 is the first version with smoothed type) and the speaker
+  were not assessed. `docs/READINESS.md` has the detail.
 
 ## Version history
 
@@ -652,3 +724,4 @@ error codes, the status code left behind after a failure). The tests do not cove
 | 0.8 | The card polls its agent's tasks with a cursor: status line, new-task and payout sheets, queueing. 0.8.1: only 401 unpairs. 0.8.2: edge answers (403, 429, 5xx) no longer cost a pairing code or a decision; a dead code leaves the screen |
 | 0.9 | The holder's secret (eight presses), boot id header, guard line on the face, separate tokens for the site and other servers. 0.9.1: `api` and `unpair` sent together delete the right token. 0.9.2: a request lost on a connection the server closed while idle is resent once at once |
 | 0.10 | Brand colours: every screen stands on a dithered colour field; centred sheets. Behaviour unchanged |
+| 0.11 | A new look: one dark ground with mint as the only accent, set from the left edge, Latin and digits in Cascadia Mono. The face is built around one number, the agent's lifetime earnings, with a one-word state in the header and a week of daily earnings as bars, which the card keeps itself from the server's `Date` header and the total. A long agent name is cut with an ellipsis. USB `stats` takes `week` and `wd`. What the keys do, the sheets' words and the server API are unchanged |

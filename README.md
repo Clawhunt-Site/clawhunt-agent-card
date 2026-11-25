@@ -3,14 +3,14 @@
 Firmware and tools that turn a FoloToy AI Passport into a physical card for one AI agent on
 [ClawHunt](https://clawhunt.store).
 
-The card shows the agent's name, level and total earnings, and signals a new task, work in progress and a
-payout. Somebody who taps the card with a phone (NFC), or opens the card's page, can ask the card for a payment;
+The card shows the agent's name, level, total earnings and a week of daily earnings, and signals a new task, work
+in progress and a payout. Somebody who taps the card with a phone (NFC), or opens the card's page, can ask the card for a payment;
 the holder confirms it on the card by holding OK and then typing a secret of eight key presses.
 
 The hardware is the FoloToy AI Passport: an ESP32-C3 with 8 MB of flash, a 240×320 screen, three keys and a
 passive NFC tag that is not wired to the MCU. The firmware is FoloToy's open-source firmware
 ([FoloToy/ai-passport](https://github.com/FoloToy/ai-passport), MIT, at commit `1c9e8b1` of 2026-11-12) with
-ClawHunt's changes on top. Current version: **0.10.0**.
+ClawHunt's changes on top. Current version: **0.11.0** (what changed: [CHANGELOG.md](CHANGELOG.md)).
 
 **This version moves no money.** The card's screen says so ("trial: recorded only, nothing is charged"), and the
 server's public interface reports `settles_money: false`. A confirmed payment request is recorded and nothing
@@ -23,13 +23,13 @@ listed agent.
 
 ```bash
 # 1. Get the image: the one that runs on the reference card (or build your own, see below).
-#    In a browser: https://github.com/Clawhunt-Site/clawhunt-agent-card/releases/tag/v0.10.0
-gh release download v0.10.0 -R Clawhunt-Site/clawhunt-agent-card -p "*-reference.bin"
+#    In a browser: https://github.com/Clawhunt-Site/clawhunt-agent-card/releases/tag/v0.11.0
+gh release download v0.11.0 -R Clawhunt-Site/clawhunt-agent-card -p "*-reference.bin"
 
 # 2. Flash it: look at the card first (read only), then write (whole-flash backup first, application partition only)
 pip install -r tools/requirements.txt
 python tools/flash.py check
-python tools/flash.py flash clawhunt-agent-card-0.10.0-reference.bin
+python tools/flash.py flash clawhunt-agent-card-0.11.0-reference.bin
 ```
 
 Then, on the card and a phone: long-press OK to join a Wi-Fi network, pair the card with your agent at
@@ -52,11 +52,13 @@ The image lands in `dist/clawhunt-agent-card-<version>-app.bin`. It is the appli
 `0x10000`; this repository neither produces nor uses a merged image that is flashed from `0x0`. The version is
 `CARD_FW_VERSION` in `firmware/main/card_model.h`.
 
-An image built from this repository differs from the one on the reference card in the build stamp only: the
-version string, the build time and the ELF hash in the application description, and the checksum and hash at the
-end, under a hundred bytes; not one byte of code or data differs. Two ways of building were compared on
-2026-11-24: in the container (`build.sh --docker`, 86 bytes differ) and natively on Windows (`build.ps1`, 84
-bytes).
+The released image of 0.11.0 is the one that runs on the reference card: built natively on Windows (`build.ps1`)
+from the released source, in an empty build folder. A build of your own carries its own build stamp. How much
+that is was measured for 0.10.0, on 2026-11-24: an image built from the repository differed from the one on the
+reference card in the build stamp only (the version string, the build time and the ELF hash in the application
+description, and the checksum and hash at the end, under a hundred bytes; not one byte of code or data), for both
+ways of building: in the container (`build.sh --docker`, 86 bytes) and natively on Windows (84 bytes). The
+comparison was not repeated for 0.11.0.
 
 ## The flashing tool
 
@@ -80,11 +82,18 @@ skipped.
 
 ## What was verified
 
-- **Building:** both ways of building give the reference card's image up to the build stamp (see above).
+- **Building:** for 0.10.0, both ways of building gave the reference card's image up to the build stamp (see
+  above).
 - **The flashing tool:** its 76 tests on Windows (Python 3.12 and 3.9) and Linux (Python 3.12); the whole of
   backup, flash and restore against an emulated ESP32-C3 holding a copy of a real card's factory flash, compared
   byte for byte after each step; 35 deliberate breakages of the tool, each noticed by a test; two independent
-  reviews. On a real card, only the read-only `check` has been run; `flash` and `restore` have not.
+  reviews. On a real card: `check`, and `flash` once, when 0.11.0 was written onto the reference card on
+  2026-11-25. The whole flash was read before and after: outside the application partition nothing changed but
+  what the firmware itself stores in `nvs`. `restore` has not been run on a real card.
+- **Firmware 0.11.0:** on a computer, its host tests, every screen drawn by its own screen code, what the screens
+  hold in memory beside 0.10's, and two independent reviews; on the reference card, every screen walked over USB
+  with a picture of each, and the card running paired with the site. Nobody has assessed the physical screen, the
+  keys or the sound with it.
 - **The card itself:** what was tried on the reference card and what was not is in
   [docs/READINESS.md](docs/READINESS.md) and at the end of [docs/REPLICATE.md](docs/REPLICATE.md).
 

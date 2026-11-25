@@ -11,6 +11,7 @@
 # 3. For each answers file given (a real server's answers in the order one card applied them, as
 #    written by the backend's local walk): the card's client is run against them and "screen ..."
 #    lines say what the holder saw. A file named X.jsonl with X.screen beside it is compared with it.
+# Before these, tests/test_card_week.c: the week of the agent's earnings (main/week.c) on its own.
 #
 # Needs a C compiler and cJSON's two source files; nothing from ESP-IDF is compiled besides them.
 set -euo pipefail
@@ -22,11 +23,18 @@ cd "${repo_root}"
 # The release before this one. CARD_APP_OLD_FILE can name a copy of that file instead of asking git; where git
 # does not have that release (a copy of the repository without the firmware's history), tests/card_app_old.c is it.
 old_ref="${CARD_APP_OLD_REF:-d7aae17}"
-out="$(mktemp -d /tmp/card-host-tests.XXXXXX)"
-trap 'case "${out}" in /tmp/card-host-tests.*) rm -rf -- "${out}" ;; esac' EXIT
+# What is built goes under TMPDIR when that is set (a system that empties /tmp while it starts took the files away
+# in the middle of a run), else under /tmp, and is removed at the end.
+scratch="${TMPDIR:-/tmp}"
+scratch="${scratch%/}"
+out="$(mktemp -d "${scratch}/card-host-tests.XXXXXX")"
+trap 'case "${out}" in "${scratch}"/card-host-tests.*) rm -rf -- "${out}" ;; esac' EXIT
 
 flags=(-std=gnu11 -Wall -Wextra -Itests/card_stubs -Imain "-I${CJSON_DIR}")
-sources=(tests/test_card_tasks.c main/cloud.c main/card_model.c "${CJSON_DIR}/cJSON.c")
+sources=(tests/test_card_tasks.c main/cloud.c main/week.c main/card_model.c "${CJSON_DIR}/cJSON.c")
+
+"${CC:-cc}" -std=gnu11 -Wall -Wextra -Imain tests/test_card_week.c main/week.c -o "${out}/week"
+"${out}/week"
 
 "${CC:-cc}" "${flags[@]}" "${sources[@]}" -o "${out}/new"
 "${out}/new" checks

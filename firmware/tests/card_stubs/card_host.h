@@ -6,6 +6,8 @@
 // down what it was asked to draw.
 #pragma once
 
+#include "card_model.h"
+
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -53,6 +55,7 @@ extern bool host_http_cuts_body;         // the next answer breaks off in the mi
 extern int host_http_no_client;          // so many of the card's next attempts to make a client fail (no memory)
 bool host_http_holds(const char *text);  // whether the client still holds this text (its address, its headers, its body)
 extern int host_http_closed;
+extern const char *host_http_date;       // the Date header every answer carries from now on; NULL: the answers have none
 
 // ---- the key-value store (NVS) -------------------------------------------------
 const char *host_store_peek(const char *key);   // "" when the key is not set
@@ -67,3 +70,5 @@ extern bool host_setup_active; // setup_active(): Wi-Fi setup owns the card
 extern uint32_t host_paused_ms; // all the time tasks spent in vTaskDelay
 extern uint32_t host_random;    // what esp_random() returns next; each call adds 0x01010101
 extern char host_last_boot[20]; // the X-Card-Boot header of the last request ("" when it had none)
+extern card_stats_t host_last_stats;   // what the face was last given to show
+extern int host_stats_count;           // and how often it was given something

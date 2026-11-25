@@ -1,17 +1,15 @@
 // main/crab_sprite.h -- the crab's two animation frames at two sizes (see tools/gen_crab.py).
-// Each frame has its window baked in: the pale sky above, the mint floor from CRAB_FLOOR_ROW (CRAB_BIG_FLOOR_ROW) down.
+// Each frame has the card's dark ground baked in: it is set straight on that ground.
 #pragma once
 
 #include "lvgl.h"
 
-#define CRAB_W 96
-#define CRAB_H 66
-#define CRAB_FLOOR_ROW 51
-#define CRAB_BIG_W 192
-#define CRAB_BIG_H 132
-#define CRAB_BIG_FLOOR_ROW 102
+#define CRAB_MARK_W 16
+#define CRAB_MARK_H 11
+#define CRAB_BIG_W 160
+#define CRAB_BIG_H 110
 
-extern const lv_image_dsc_t crab_frame0;   // CRAB_W x CRAB_H, in the face's window
-extern const lv_image_dsc_t crab_frame1;
-extern const lv_image_dsc_t crab_big0;     // CRAB_BIG_W x CRAB_BIG_H, in the level-up poster's window
+extern const lv_image_dsc_t crab_mark0;    // CRAB_MARK_W x CRAB_MARK_H, in the face's header
+extern const lv_image_dsc_t crab_mark1;
+extern const lv_image_dsc_t crab_big0;     // CRAB_BIG_W x CRAB_BIG_H, on the level-up poster
 extern const lv_image_dsc_t crab_big1;

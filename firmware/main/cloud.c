@@ -26,10 +26,12 @@
 #include "host_link.h"
 #include "net.h"
 #include "setup.h"
+#include "week.h"
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 
 #define CLOUD_DEFAULT_BASE "https://clawhunt.store"
 // Some CDNs challenge clients that do not look like a browser; the card still says what it is at the end.
@@ -128,6 +130,9 @@ static char s_attempt[9];         // an id for this typed secret: a try sent twi
 static int s_secret_for;
 static card_guard_t s_guard_told; // how the server guards the card, as last handed to the screen
 static bool s_guard_told_any;
+// The server's time, from the Date header of the answer in hand: 0 when the answer had none. The card has no
+// clock of its own; this is what tells it which day the agent's earnings belong to (main/week.c).
+static int64_t s_answer_epoch_s;
 
 static int64_t now_us(void)
 {
@@ -163,6 +168,12 @@ static const char *cursor_key(void)
     return s_other_server ? "tcur2" : "tcur";
 }
 
+// The week of the agent's earnings is kept per server as well: agent 1 of a test server is not agent 1 of the site.
+static const char *week_key(void)
+{
+    return s_other_server ? "week2" : "week";
+}
+
 // Overwrite what held the holder's secret. Through a volatile pointer, so the compiler keeps it.
 static void wipe(void *memory, size_t size)
 {
@@ -177,7 +188,13 @@ static esp_err_t on_http_event(esp_http_client_event_t *evt)
     // What the client tells of the request in hand: that it opened a connection for it, and that a
     // header of the answer came (the server has heard the request, whatever becomes of the rest).
     if (evt->event_id == HTTP_EVENT_ON_CONNECTED) s_connected = true;
-    if (evt->event_id == HTTP_EVENT_ON_HEADER) s_answered = true;
+    if (evt->event_id == HTTP_EVENT_ON_HEADER) {
+        s_answered = true;
+        if (evt->header_key && evt->header_value && strcasecmp(evt->header_key, "Date") == 0) {
+            int64_t epoch_s;
+            if (week_parse_http_date(evt->header_value, &epoch_s)) s_answer_epoch_s = epoch_s;
+        }
+    }
     if (evt->event_id == HTTP_EVENT_ON_DATA && evt->data_len > 0) {
         const int room = CLOUD_BODY_MAX - 1 - s_body_len;
         const int n = evt->data_len < room ? evt->data_len : room;
@@ -229,6 +246,7 @@ static esp_err_t api_try(esp_http_client_method_t method, const char *path, cons
     s_body[0] = '\0';
     s_connected = false;
     s_answered = false;
+    s_answer_epoch_s = 0;
     *status = -1;
     if (!client_ready()) return ESP_FAIL;
 
@@ -491,22 +509,39 @@ static bool agent_to_stats(const cJSON *agent, int settled, card_stats_t *stats)
     stats->xp = ladder_progress(tasks);
     stats->today_cents = clamp_int(cJSON_GetNumberValue(cJSON_GetObjectItem(agent, "total_earned")), 0, 99999999);
     stats->has_cells = true;
-    card_utf8_copy(stats->money_label, sizeof(stats->money_label), "累计收入");
-    card_utf8_copy(stats->cells[0].label, CARD_CELL_MAX, "成交");
+    // The face's one number is the agent's lifetime earnings; under it, deliveries, settled deals and the success
+    // rate. A fact whose value is "-" is not known, and the face leaves it out.
+    card_utf8_copy(stats->money_label, sizeof(stats->money_label), "TOTAL · EARNED");
+    card_utf8_copy(stats->cells[0].label, CARD_CELL_MAX, "deals");
     snprintf(stats->cells[0].value, CARD_CELL_MAX, "%d", tasks);
-    card_utf8_copy(stats->cells[1].label, CARD_CELL_MAX, "成功率");
-    if (tasks > 0) {
-        snprintf(stats->cells[1].value, CARD_CELL_MAX, "%d%%", clamp_int(rate * 100 + 0.5, 0, 100));
-    } else {
-        card_utf8_copy(stats->cells[1].value, CARD_CELL_MAX, "-");   // nothing delivered yet: there is no rate
-    }
-    card_utf8_copy(stats->cells[2].label, CARD_CELL_MAX, "已结算");
+    card_utf8_copy(stats->cells[1].label, CARD_CELL_MAX, "settled");
     if (settled >= 0) {
-        snprintf(stats->cells[2].value, CARD_CELL_MAX, "%d", settled);
+        snprintf(stats->cells[1].value, CARD_CELL_MAX, "%d", settled);
     } else {
-        card_utf8_copy(stats->cells[2].value, CARD_CELL_MAX, "-");
+        card_utf8_copy(stats->cells[1].value, CARD_CELL_MAX, "-");
+    }
+    stats->cells[2].label[0] = '\0';   // a percentage says what it is
+    if (tasks > 0) {
+        snprintf(stats->cells[2].value, CARD_CELL_MAX, "%d%%", clamp_int(rate * 100 + 0.5, 0, 100));
+    } else {
+        card_utf8_copy(stats->cells[2].value, CARD_CELL_MAX, "-");   // nothing delivered yet: there is no rate
     }
     return true;
+}
+
+// The bars of the face: which day the agent's earnings belong to, from how the total moved since the answer
+// before and the server's time of this one (main/week.c). An answer without a time, or one that does not say the
+// total (no figure is not a total of zero), leaves the week as it was.
+// The week is written to flash only when what is kept of it changes.
+static void week_note(const cJSON *agent, card_stats_t *stats, int64_t answered_s)
+{
+    const bool told = cJSON_IsNumber(cJSON_GetObjectItem(agent, "total_earned"));
+    if (told && answered_s > 0 && week_sample(stats->agent_id, stats->today_cents, answered_s)) {
+        char text[WEEK_TEXT_MAX];
+        week_text(text, sizeof(text));
+        (void)net_store_set(week_key(), text);
+    }
+    stats->has_week = week_for(stats->agent_id, stats->week, &stats->weekday);
 }
 
 // How the server guards the card ("security" of the card's own view), for the face: whether a
@@ -535,6 +570,7 @@ static void guard_tell(const cJSON *security)
 static void profile_device(void)
 {
     const int status = api(HTTP_METHOD_GET, "/api/cards/device/me", NULL, true);
+    const int64_t answered_s = s_answer_epoch_s;
     if (token_refused(status)) {
         host_link_send("{\"t\":\"cloud\",\"token\":\"rejected\",\"http\":%d}", status);
         forget_token();
@@ -544,6 +580,7 @@ static void profile_device(void)
     const cJSON *agent = cJSON_GetObjectItem(reply, "agent");
     card_event_t event = { .type = CARD_EV_NET_STATS };
     const bool ok = agent_to_stats(agent, clamp_int(cJSON_GetNumberValue(cJSON_GetObjectItem(agent, "settled_total")), -1, 999999), &event.stats);
+    if (ok) week_note(agent, &event.stats, answered_s);
     if (ok) card_app_post(&event);
     if (ok) guard_tell(cJSON_GetObjectItem(reply, "security"));
     host_link_send("{\"t\":\"net\",\"sync\":\"%s\",\"http\":%d,\"via\":\"device\"}", ok ? "ok" : "failed", status);
@@ -557,6 +594,7 @@ static void profile_public(void)
     char path[64];
     snprintf(path, sizeof(path), "/api/agents/%d", CARD_AGENT_ID);
     int status = api(HTTP_METHOD_GET, path, NULL, false);
+    const int64_t answered_s = s_answer_epoch_s;   // of the answer that carries the earnings, not of the next one
     cJSON *agent = status == 200 ? cJSON_Parse(s_body) : NULL;
     int settled = -1;
     if (agent) {
@@ -567,6 +605,7 @@ static void profile_public(void)
     }
     card_event_t event = { .type = CARD_EV_NET_STATS };
     const bool ok = agent_to_stats(agent, settled, &event.stats);
+    if (ok) week_note(agent, &event.stats, answered_s);
     if (ok) card_app_post(&event);
     host_link_send("{\"t\":\"net\",\"sync\":\"%s\",\"http\":%d,\"via\":\"public\"}", ok ? "ok" : "failed", status);
     s_next_profile_us = now_us() + (ok ? PROFILE_EVERY_US : RETRY_US);
@@ -846,9 +885,15 @@ static void reload_settings(void)
         // it goes. What the site told it stays.
         s_forget_other = false;
         (void)net_store_set("tcur2", NULL);
+        (void)net_store_set("week2", NULL);
     }
     net_store_get(cursor_key(), s_cursor, sizeof(s_cursor));
     if (!s_token[0] || !cursor_ok(s_cursor)) s_cursor[0] = '\0';
+    // The week of earnings kept for the server the card now speaks to. The first answer after this only says
+    // where the total stands: what was earned while the card was not asking belongs to no day.
+    char week[WEEK_TEXT_MAX];
+    net_store_get(week_key(), week, sizeof(week));
+    week_restore(week);
     s_next_task_us = 0;
     // Whatever job the face shows is no longer known to be true.
     if (s_task_told_any) {

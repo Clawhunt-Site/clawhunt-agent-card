@@ -125,29 +125,29 @@ static void step_after(uint32_t ms, lv_timer_cb_t next)
 static void show_rest(void)
 {
     // A card that knows no network says how to give it one.
-    const char *line = net_saved_count() > 0 ? "摸鱼中，等单…" : "长按 OK 键连 Wi-Fi";
+    const char *line = net_saved_count() > 0 ? CARD_LINE_IDLE : CARD_LINE_NO_WIFI;
     bool busy = false;
     int progress = 0;
     if (s_task.id > 0) {
         switch (s_task.phase) {
-        case CARD_JOB_BID:      line = "竞标中…"; busy = true; break;
-        case CARD_JOB_WON:      line = "中标了，开工"; busy = true; break;
-        case CARD_JOB_OWN:      line = "收到，这就开工"; busy = true; break;
+        case CARD_JOB_BID:      line = CARD_LINE_BID; busy = true; break;
+        case CARD_JOB_WON:      line = CARD_LINE_WON; busy = true; break;
+        case CARD_JOB_OWN:      line = CARD_LINE_OWN; busy = true; break;
         // The site keeps no measure of how far a task has got, so there is no percentage here.
-        case CARD_JOB_WORK:     line = "干活中…"; busy = true; break;
-        case CARD_JOB_DONE:     line = "交付了，等验收"; busy = true; progress = 100; break;
-        case CARD_JOB_HELD:     line = "验收了，等放款"; break;
-        case CARD_JOB_DISPUTED: line = "有争议，等裁定"; break;
+        case CARD_JOB_WORK:     line = CARD_LINE_WORK; busy = true; break;
+        case CARD_JOB_DONE:     line = CARD_LINE_DONE; busy = true; progress = 100; break;
+        case CARD_JOB_HELD:     line = CARD_LINE_HELD; break;
+        case CARD_JOB_DISPUTED: line = CARD_LINE_DISPUTED; break;
         case CARD_JOB_LOST:     break;   // said once in handle_task; nothing stays on the line
         }
     }
     // What stops the card from paying goes before everything else on the line: nobody can ask a
     // frozen card, or one without a secret, to pay, so without this it would just look idle.
     if (s_guard.known && s_guard.frozen) {
-        line = s_guard.by_attempts ? "口令输错，卡已冻结" : "卡已冻结";
+        line = s_guard.by_attempts ? CARD_LINE_FROZEN_TRIES : CARD_LINE_FROZEN;
         progress = 0;
     } else if (s_guard.known && !s_guard.secret_set) {
-        line = "没设口令，还不能付款";
+        line = CARD_LINE_NO_SECRET;
         progress = 0;
     }
     ui_card_set_busy(busy);
@@ -696,7 +696,7 @@ static void handle_key(card_key_t key)
     }
     if (s_mode == MODE_OFFER && key == CARD_KEY_OK) {
         sfx_play(SFX_BLIP);
-        start_work("竞标中…");
+        start_work(CARD_LINE_BID);
         host_link_send("{\"t\":\"accept\",\"id\":%d}", s_offer.id);
         return;
     }
@@ -774,17 +774,17 @@ static void handle_job(card_job_phase_t phase, int progress)
     if (phase == CARD_JOB_OWN) yield_notice();   // a sheet the server only tells does not stand in the way
     if (phase == CARD_JOB_OWN && s_mode == MODE_IDLE) {
         sfx_play(SFX_BLIP);
-        start_work("收到，这就开工");
+        start_work(CARD_LINE_OWN);
         return;
     }
     if (s_mode != MODE_WORK) return;
 
     char line[40];
     switch (phase) {
-    case CARD_JOB_BID:  ui_card_set_status("竞标中…", 0); break;
-    case CARD_JOB_WON:  ui_card_set_status("中标了，开工", 0); sfx_play(SFX_BLIP); break;
-    case CARD_JOB_OWN:  ui_card_set_status("收到，这就开工", 0); break;
-    case CARD_JOB_DONE: ui_card_set_status("交付了，等验收", 100); break;
+    case CARD_JOB_BID:  ui_card_set_status(CARD_LINE_BID, 0); break;
+    case CARD_JOB_WON:  ui_card_set_status(CARD_LINE_WON, 0); sfx_play(SFX_BLIP); break;
+    case CARD_JOB_OWN:  ui_card_set_status(CARD_LINE_OWN, 0); break;
+    case CARD_JOB_DONE: ui_card_set_status(CARD_LINE_DONE, 100); break;
     case CARD_JOB_LOST:
         // No payout will come for this one. Without this the card would stay on "bidding", refuse new tasks and
         // hide a pairing code until some payout arrived.
@@ -796,10 +796,10 @@ static void handle_job(card_job_phase_t phase, int progress)
         // takes the next task, and its status line says what it waits for until the next thing changes it.
         // Without this the card said "delivered, waiting for acceptance" until the payout, days after the acceptance.
         go_idle_with_a_word();
-        ui_card_set_status("验收了，等放款", 0);
+        ui_card_set_status(CARD_LINE_HELD, 0);
         break;
     case CARD_JOB_WORK:
-        snprintf(line, sizeof(line), "干活中 %d%%", progress);
+        snprintf(line, sizeof(line), CARD_LINE_WORK_PART " %d%%", progress);
         ui_card_set_status(line, progress);
         break;
     case CARD_JOB_DISPUTED:
@@ -828,7 +828,7 @@ static void show_paid(const card_paid_t *paid)
 {
     step_cancel();
     ui_card_set_busy(false);
-    ui_card_set_status("摸鱼中，等单…", 0);
+    ui_card_set_status(CARD_LINE_IDLE, 0);
     s_paid = *paid;
     s_mode = MODE_PAID;
     s_pending_level = paid->new_level;
@@ -839,7 +839,7 @@ static void show_paid(const card_paid_t *paid)
 
 static void handle_net(int state)
 {
-    static const char *const LABELS[] = { "", "连网中", "Wi-Fi", "没连上" };
+    static const char *const LABELS[] = { CARD_NET_OFF, CARD_NET_JOINING, CARD_NET_ONLINE, CARD_NET_FAILED };
     ui_card_set_net(LABELS[state >= 0 && state < 4 ? state : 0]);
 }
 
@@ -963,12 +963,13 @@ esp_err_t card_app_start(void)
 
     if (!bsp_lvgl_lock(1000)) return ESP_ERR_TIMEOUT;
     ui_card_init();
-    // Until the gateway connects, show the identity this firmware was built for.
+    // Until something tells the card its agent's numbers, show the identity this firmware was built for and no
+    // numbers: without a level the face sets "--" where the number stands, and a fact of "-" is left out.
     const card_stats_t placeholder = {
         .name = CARD_AGENT_NAME,
         .has_cells = true,
-        .cells = { { "成交", "-" }, { "成功率", "-" }, { "已结算", "-" } },
-        .money_label = "等网关连上",
+        .cells = { { "deals", "-" }, { "settled", "-" }, { "", "-" } },
+        .money_label = "NO DATA YET",
     };
     ui_card_set_stats(&placeholder);
     go_idle();

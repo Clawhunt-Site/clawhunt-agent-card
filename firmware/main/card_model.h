@@ -4,14 +4,38 @@
 #include <stdbool.h>
 #include <stddef.h>
 
-#define CARD_FW_VERSION "0.10.0"
+#define CARD_FW_VERSION "0.11.0"
 #define CARD_TITLE_MAX  64   // bytes, including the terminating NUL
 #define CARD_NAME_MAX   24
 #define CARD_CELL_COUNT 3
 #define CARD_CELL_MAX   16   // bytes per stat label or value, including the NUL
 #define CARD_SECRET_LEN 8    // the holder's secret: this many presses of the three keys
+#define CARD_WEEK_DAYS  7    // the bars of the face: the last seven days, today last
+// Where a day of the week begins: minutes east of UTC. The card has no setting for it yet.
+#define CARD_UTC_OFFSET_MIN 480
 
-// One of the three stat tiles: the computer decides what each one shows.
+// The status line, in the words the state machine says them (main/card_app.c). The face shows the line when it
+// changes and keeps a one-word state in its header: it knows which word from these.
+#define CARD_LINE_IDLE         "摸鱼中，等单…"
+#define CARD_LINE_BID          "竞标中…"
+#define CARD_LINE_WON          "中标了，开工"
+#define CARD_LINE_OWN          "收到，这就开工"
+#define CARD_LINE_WORK         "干活中…"
+#define CARD_LINE_WORK_PART    "干活中"           // "干活中 40%": how a computer's job says how far it is
+#define CARD_LINE_DONE         "交付了，等验收"
+#define CARD_LINE_HELD         "验收了，等放款"
+#define CARD_LINE_DISPUTED     "有争议，等裁定"
+#define CARD_LINE_FROZEN_TRIES "口令输错，卡已冻结"
+#define CARD_LINE_FROZEN       "卡已冻结"
+#define CARD_LINE_NO_SECRET    "没设口令，还不能付款"
+#define CARD_LINE_NO_WIFI      "长按 OK 键连 Wi-Fi"   // a card that knows no network says how to give it one
+// What the face is told about the network, by state (card_event_t.net_state).
+#define CARD_NET_OFF     ""
+#define CARD_NET_JOINING "连网中"
+#define CARD_NET_ONLINE  "Wi-Fi"
+#define CARD_NET_FAILED  "没连上"
+
+// One of the three facts under the number: the computer decides what each one shows.
 typedef struct {
     char label[CARD_CELL_MAX];
     char value[CARD_CELL_MAX];
@@ -25,12 +49,17 @@ typedef struct {
     int deals;         // accepted deliveries
     int rating10;      // average rating times ten: 49 means 4.9
     int streak;
-    int today_cents;   // the money line under the stats
-    // Optional overrides. Without them the tiles show deals / rating / streak
-    // and the money line reads "earned today".
+    int today_cents;   // the face's one number: what money_label says it is
+    // Optional overrides. Without them the facts are deals / rating / streak
+    // and the number reads "earned today".
     bool has_cells;
     card_cell_t cells[CARD_CELL_COUNT];
     char money_label[CARD_CELL_MAX];
+    // The bars: what the agent earned on each of the last seven days, in cents, today last; < 0 where there is
+    // no figure. Without has_week the face draws no bars, only where they would stand.
+    bool has_week;
+    int week[CARD_WEEK_DAYS];
+    int weekday;       // today's day of the week, 0 = Monday
 } card_stats_t;
 
 typedef struct {

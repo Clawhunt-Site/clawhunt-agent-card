@@ -91,6 +91,19 @@ static bool parse_stats(const cJSON *msg, card_event_t *event)
     stats->today_cents = json_int(msg, "today", 0, 0, 99999999);
     card_utf8_copy(stats->money_label, sizeof(stats->money_label), json_str(msg, "money_label"));
     stats->has_cells = parse_cells(cJSON_GetObjectItemCaseSensitive(msg, "cells"), stats->cells);
+    // "week": what the agent earned on each of the last seven days, in cents, today last (below zero: no figure),
+    // and "wd": today's day of the week, 0 = Monday. Both, or the face draws no bars.
+    const cJSON *week = cJSON_GetObjectItemCaseSensitive(msg, "week");
+    const cJSON *weekday = cJSON_GetObjectItemCaseSensitive(msg, "wd");
+    if (cJSON_IsArray(week) && cJSON_GetArraySize(week) == CARD_WEEK_DAYS && cJSON_IsNumber(weekday)) {
+        for (int i = 0; i < CARD_WEEK_DAYS; i++) {
+            const cJSON *day = cJSON_GetArrayItem(week, i);
+            const double cents = cJSON_IsNumber(day) ? day->valuedouble : -1;
+            stats->week[i] = cents >= 0 ? (cents > 99999999 ? 99999999 : (int)cents) : -1;
+        }
+        stats->weekday = weekday->valuedouble >= 0 && weekday->valuedouble <= 6 ? (int)weekday->valuedouble : 0;
+        stats->has_week = true;
+    }
     return stats->name[0] != '\0';
 }
 

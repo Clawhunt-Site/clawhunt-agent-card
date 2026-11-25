@@ -258,8 +258,11 @@ int host_http_closed_slowly_ms;
 bool host_http_ends_connection;
 bool host_http_cuts_body;
 int host_http_no_client;
+const char *host_http_date;
 
 char host_last_boot[20];
+card_stats_t host_last_stats;
+int host_stats_count;
 uint32_t host_random = 0x0a1b2c3d;
 
 uint32_t esp_random(void)
@@ -416,6 +419,13 @@ esp_err_t esp_http_client_perform(esp_http_client_handle_t client)
     if (answer <= 0) return failed(client, ESP_ERR_HTTP_FETCH_HEADER);   // on a kept connection: the read failed
     client->status = answer;
     tell(client, HTTP_EVENT_ON_HEADER);   // what the server sends back begins with its headers
+    if (host_http_date) {
+        // and among them, when the test gives one, the server's time
+        char key[] = "Date", value[40];
+        snprintf(value, sizeof(value), "%s", host_http_date);
+        esp_http_client_event_t header = { .event_id = HTTP_EVENT_ON_HEADER, .header_key = key, .header_value = value };
+        client->handler(&header);
+    }
     // As ESP-IDF 5.5 does with max_authorization_retries = -1, which the card sets: a 401 ends the
     // request as a failure once the headers are in, before any of the body. The status stays readable.
     if (client->status == 401) return failed(client, ESP_FAIL);
@@ -592,6 +602,8 @@ void ui_card_init(void)
 
 void ui_card_set_stats(const card_stats_t *stats)
 {
+    host_last_stats = *stats;
+    host_stats_count++;
     host_note("stats %s lv%d money=%d", stats->name, stats->level, stats->today_cents);
 }
 

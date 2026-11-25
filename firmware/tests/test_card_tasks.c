@@ -26,6 +26,8 @@
 #endif
 #include CARD_APP_SOURCE
 
+#include "week.h"
+
 // The checks below are not built for the previous release's card_app.c (CARD_APP_OLD): unused there.
 #define MAYBE_UNUSED __attribute__((unused))
 
@@ -1786,6 +1788,153 @@ static void check_what_is_not_sent_again(void)
     s_pay_status = 200;
 }
 
+// ---- the week of the agent's earnings: kept from the total and the server's time -------------
+
+static const char *profile_with(int total_cents)
+{
+    static char reply[400];
+    snprintf(reply, sizeof(reply),
+             "{\"card\":{\"public_id\":\"abcdefghjk\"},\"agent\":{\"id\":1,\"name\":\"lingo-crab\",\"level\":1,"
+             "\"total_tasks_completed\":3,\"success_rate\":1.0,\"total_earned\":%d,\"settled_total\":2},"
+             "\"security\":{\"secret_set\":true,\"frozen\":false}}",
+             total_cents);
+    return reply;
+}
+
+// The card's own view with the agent's total left out: what a server that is half deployed might answer.
+static const char PROFILE_WITHOUT_TOTAL[] =
+    "{\"card\":{\"public_id\":\"abcdefghjk\"},\"agent\":{\"id\":1,\"name\":\"lingo-crab\",\"level\":1,"
+    "\"total_tasks_completed\":3,\"success_rate\":1.0,\"settled_total\":2},"
+    "\"security\":{\"secret_set\":true,\"frozen\":false}}";
+
+static void check_the_week_of_earnings(void)
+{
+    step();
+    pair_again();
+    host_advance(HOST_STATS_WIN_MS);   // no computer's numbers stand in the way of the card's own
+
+    // the first answer that carries the server's time: a week begins today (a Wednesday at the card's offset),
+    // with nothing earned yet and nothing known of the days before
+    host_http_date = "Wed, 25 Nov 2026 02:00:00 GMT";
+    s_profile_reply = profile_with(1000);
+    int count = host_stats_count;
+    cloud_round(61000);
+    CHECK(host_stats_count > count && host_last_stats.has_week && host_last_stats.weekday == 2);
+    CHECK(host_last_stats.week[6] == 0 && host_last_stats.week[5] == -1 && host_last_stats.week[0] == -1);
+    // what goes to flash: the agent, the day, seven days' cents, and the highest total the card was told
+    CHECK(strcmp(host_store_peek("week"), "1,1,20782,-1,-1,-1,-1,-1,-1,0,1000") == 0);
+    // the face names what its numbers are
+    CHECK(strcmp(host_last_stats.money_label, "TOTAL \xC2\xB7 EARNED") == 0 && host_last_stats.today_cents == 1000);
+    CHECK(strcmp(host_last_stats.cells[0].label, "deals") == 0 && strcmp(host_last_stats.cells[0].value, "3") == 0);
+    CHECK(strcmp(host_last_stats.cells[1].label, "settled") == 0 && strcmp(host_last_stats.cells[1].value, "2") == 0);
+    CHECK(host_last_stats.cells[2].label[0] == '\0' && strcmp(host_last_stats.cells[2].value, "100%") == 0);
+
+    // a minute later the total has grown: that is today's, and it is written to flash
+    host_http_date = "Wed, 25 Nov 2026 02:01:01 GMT";
+    s_profile_reply = profile_with(1500);
+    int writes = host_store_writes("week");
+    cloud_round(61000);
+    CHECK(host_last_stats.week[6] == 500 && host_store_writes("week") == writes + 1);
+    CHECK(strcmp(host_store_peek("week"), "1,1,20782,-1,-1,-1,-1,-1,-1,500,1500") == 0);
+    // nothing new: nothing is written
+    host_http_date = "Wed, 25 Nov 2026 02:02:02 GMT";
+    cloud_round(61000);
+    CHECK(host_last_stats.week[6] == 500 && host_store_writes("week") == writes + 1);
+    // an answer without the server's time: the total is shown, the week stays as it is
+    host_http_date = NULL;
+    s_profile_reply = profile_with(1700);
+    cloud_round(61000);
+    CHECK(host_last_stats.today_cents == 1700 && host_last_stats.has_week && host_last_stats.week[6] == 500);
+    CHECK(host_store_writes("week") == writes + 1);
+    // the next answer with a time finds the growth since the last one with a time, two minutes before
+    host_http_date = "Wed, 25 Nov 2026 02:04:05 GMT";
+    cloud_round(61000);
+    CHECK(host_last_stats.week[6] == 700);
+
+    // midnight at the card's offset is 16:00 GMT: a new day, and yesterday keeps its figure
+    host_http_date = "Wed, 25 Nov 2026 16:00:30 GMT";
+    cloud_round(61000);
+    CHECK(host_last_stats.weekday == 3 && host_last_stats.week[5] == 700 && host_last_stats.week[6] == 0);
+    CHECK(strcmp(host_store_peek("week"), "1,1,20783,-1,-1,-1,-1,-1,700,0,1700") == 0);
+
+    // the settings are read anew, as after a restart: the week is taken up from flash, and the first answer only
+    // says where the total stands. What was earned while the card was not asking is in the total and in no day
+    s_profile_reply = profile_with(1900);
+    pair_again();
+    cloud_round(1000);
+    CHECK(host_last_stats.today_cents == 1900 && host_last_stats.has_week && host_last_stats.week[6] == 0);
+    CHECK(host_last_stats.week[5] == 700);
+    host_http_date = "Wed, 25 Nov 2026 16:01:31 GMT";
+    s_profile_reply = profile_with(2000);
+    cloud_round(61000);
+    CHECK(host_last_stats.week[6] == 100);
+
+    // an answer that leaves the total out is not a total of zero: the week is left as it is, nothing is written,
+    // and the total coming back a minute later has earned nothing
+    writes = host_store_writes("week");
+    host_http_date = "Wed, 25 Nov 2026 16:02:32 GMT";
+    s_profile_reply = PROFILE_WITHOUT_TOTAL;
+    cloud_round(61000);
+    CHECK(host_last_stats.today_cents == 0 && host_last_stats.has_week && host_last_stats.week[6] == 100);
+    CHECK(host_store_writes("week") == writes);
+    host_http_date = "Wed, 25 Nov 2026 16:03:33 GMT";
+    s_profile_reply = profile_with(2000);
+    cloud_round(61000);
+    CHECK(host_last_stats.today_cents == 2000 && host_last_stats.week[6] == 100 && host_store_writes("week") == writes);
+    // nor has it after an answer that said zero outright: only what rises above the highest total counts
+    host_http_date = "Wed, 25 Nov 2026 16:04:34 GMT";
+    s_profile_reply = profile_with(0);
+    cloud_round(61000);
+    CHECK(host_last_stats.week[6] == 100 && host_store_writes("week") == writes);
+    host_http_date = "Wed, 25 Nov 2026 16:05:35 GMT";
+    s_profile_reply = profile_with(2050);
+    cloud_round(61000);
+    CHECK(host_last_stats.week[6] == 150 && host_store_writes("week") == writes + 1);
+    CHECK(strcmp(host_store_peek("week"), "1,1,20783,-1,-1,-1,-1,-1,700,150,2050") == 0);
+
+    // another server's agents are not the site's: while the card is pointed elsewhere the site's week stays in
+    // flash as it is. What the other server tells the card is kept apart, and goes when the card leaves it
+    char kept[WEEK_TEXT_MAX];
+    snprintf(kept, sizeof(kept), "%s", host_store_peek("week"));
+    CHECK(kept[0] != '\0');
+    s_pair_start_status = 200;
+    s_pair_start_reply = "{\"device_code\":\"dc-of-the-other-server-0123456789\",\"user_code\":\"BCDF-GHJK\","
+                         "\"verification_uri\":\"http://192.168.0.10:8496/card/pair\",\"expires_in\":600,\"interval\":5}";
+    s_pair_poll_status = 400;
+    s_pair_poll_reply = "{\"error\":\"authorization_pending\"}";
+    host_http_date = "Thu, 26 Nov 2026 03:00:00 GMT";
+    s_profile_reply = profile_with(50);
+    CHECK(cloud_set_base("http://192.168.0.10:8496") == ESP_OK);
+    cloud_round(100);
+    CHECK(strcmp(host_store_peek("week"), kept) == 0 && host_store_peek("week2")[0] == '\0');
+    cloud_round(6000);
+    cloud_round(61000);
+    s_pair_poll_status = 200;
+    s_pair_poll_reply = "{\"device_token\":\"chd_of-the-other-server\",\"public_id\":\"zzzzzzzzzz\",\"agent_id\":1}";
+    s_task_reply = "{\"job\":null,\"event\":null,\"cursor\":\"v1.a1.b1.d1.p1.j0-none\",\"poll_s\":15}";
+    cloud_round(31000);
+    cloud_round(16000);
+    CHECK(strcmp(cloud_state_name(), "paired") == 0 && strcmp(host_store_peek("token2"), "chd_of-the-other-server") == 0);
+    cloud_round(61000);
+    CHECK(strcmp(host_store_peek("week2"), "1,1,20783,-1,-1,-1,-1,-1,-1,0,50") == 0);
+    host_http_date = "Thu, 26 Nov 2026 03:01:01 GMT";
+    s_profile_reply = profile_with(80);
+    cloud_round(61000);
+    CHECK(strcmp(host_store_peek("week2"), "1,1,20783,-1,-1,-1,-1,-1,-1,30,80") == 0);
+    CHECK(strcmp(host_store_peek("week"), kept) == 0);
+
+    // back at the site: its week as it was, and the other server's gone with its token
+    host_http_date = NULL;
+    s_task_reply = "{\"job\":null,\"event\":null,\"cursor\":\"v1.a1.b9.d4.p8.j0-none\",\"poll_s\":15}";
+    CHECK(cloud_set_base("") == ESP_OK);
+    cloud_round(100);
+    CHECK(strcmp(host_store_peek("week"), kept) == 0 && strcmp(cloud_state_name(), "paired") == 0);
+    CHECK(host_store_peek("week2")[0] == '\0' && host_store_peek("token2")[0] == '\0');
+    s_profile_reply = PROFILE;
+    s_pair_start_status = s_pair_poll_status = 404;
+    s_pair_start_reply = s_pair_poll_reply = "{\"detail\":\"Not found\"}";
+}
+
 static int run_checks(void)
 {
     CHECK(card_app_start() == ESP_OK);
@@ -1804,6 +1953,7 @@ static int run_checks(void)
     check_usb_commands_that_arrive_together();
     check_a_connection_the_server_closed();
     check_what_is_not_sent_again();
+    check_the_week_of_earnings();
     printf(s_failures ? "card tasks: %d FAILED\n" : "card tasks: PASS\n", s_failures);
     return s_failures ? 1 : 0;
 }
