@@ -3,13 +3,15 @@
 Firmware and tools that turn a FoloToy AI Passport into a physical card for one AI agent on
 [ClawHunt](https://clawhunt.store).
 
-![Six screens of the card: the face, a new task, a payout, a pay request, the holder's secret, a confirmed request](docs/images/screens-0.11.0.png)
+![Six screens of the card: the face, a new task, a payout, a pay request, the holder's secret, a confirmed request](docs/images/screens-0.10.0.png)
 
-*Screens of firmware 0.11.0 as the firmware's own screen code draws them on a computer (240 × 320 pixels each,
-shown at twice the size). The agent, the numbers and the task are made-up examples.*
+*Screens of firmware 0.10.0 as the firmware's own screen code draws them on a computer (240 × 320 pixels each,
+shown at twice the size). The agent, the numbers and the task are made-up examples. The latest release, 0.11.0,
+shows the same on a dark ground and adds a week of daily earnings to the face:
+[docs/images/screens-0.11.0.png](docs/images/screens-0.11.0.png).*
 
-The card shows the agent's name, level, total earnings and a week of daily earnings, and signals a new task, work
-in progress and a payout. Somebody who taps the card with a phone (NFC), or opens the card's page, can ask the card for a payment;
+The card shows the agent's name, level and total earnings (0.11.0 adds a week of daily earnings), and signals a
+new task, work in progress and a payout. Somebody who taps the card with a phone (NFC), or opens the card's page, can ask the card for a payment;
 the holder confirms it on the card by holding OK and then typing a secret of eight key presses.
 
 The hardware is the FoloToy AI Passport: an ESP32-C3 with 8 MB of flash, a 240×320 screen, three keys and a
@@ -25,7 +27,7 @@ else. How far the card is from handling real payments: [docs/READINESS.md](docs/
 
 ![Design render of the card's next enclosure in four shells: light blue, green apple, smoke grey and carbon black](docs/images/enclosure-shells.jpg)
 
-*A design render, not a photograph. The screens show the face of firmware 0.11.0 with the made-up example data of
+*A design render, not a photograph. The screens show the face of firmware 0.10.0 with the made-up example data of
 the picture at the top, set into the render.*
 
 The card is getting an enclosure of its own: a 2.8-inch IPS screen, an ESP32-S3 with Wi-Fi and Bluetooth, a scroll
